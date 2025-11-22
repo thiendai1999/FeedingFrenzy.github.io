@@ -55,24 +55,20 @@ var global_mouse_y = 0;
 
 
 
-var marines_number = 8;
-var base_marines_number = 8;
+var marines_number = 6;
+var base_marines_number = 6;
 var isPause = true,
     isWin = false,
     isGameOver = false;
 
-var score_to_level_2 = 20;
-var score_to_level_3 = 40;
-var score_to_level_4 = 70;
-var score_to_level_5 = 100;
-var score_to_level_6 = 140;
+var score_to_level_2 = 30;
+var score_to_level_3 = 80;
+var score_to_win = 140;
 
 var level_thresholds = [
     score_to_level_2,
     score_to_level_3,
-    score_to_level_4,
-    score_to_level_5,
-    score_to_level_6,
+    score_to_win,
 ];
 
 var background = new Image();
@@ -241,7 +237,7 @@ var MyProgressBar = {
 
     init: function() {
         this.value = 0;
-        this.max_value = score_to_level_6;
+        this.max_value = score_to_win;
         this.offsetX = MyCanvas.canvas_width - this.width - 50;
         this.offsetY = 50;
         this.line_offsets = level_thresholds.map(function(threshold) {
@@ -261,7 +257,12 @@ var MyProgressBar = {
         context_render.fillRect(this.offsetX + trans_x, this.offsetY + trans_y, this.width, this.height);
 
         context_render.fillStyle = this.value_color;
-        context_render.fillRect(this.offsetX + trans_x, this.offsetY + trans_y, this.value / this.max_value * this.width, this.height);
+        context_render.fillRect(
+            this.offsetX + trans_x,
+            this.offsetY + trans_y,
+            this.value / this.max_value * this.width,
+            this.height
+        );
 
         context_render.fillStyle = this.line_color;
 
@@ -357,7 +358,45 @@ var MyMarines = {
         return Math.floor(Math.random() * (max - min + 1)) + min;
     },
 
-    add: function() {
+    getRandomSpeed: function(min, max) {
+        return Math.random() * (max - min) + min;
+    },
+
+    pickMarineType: function(playerLevel) {
+        var roll = Math.random();
+        if (playerLevel <= 1) {
+            if (roll < 0.7) return 1; // cá cấp 1 chiếm đa số
+            if (roll < 0.88) return 2;
+            if (roll < 0.98) return 3;
+            return 0; // sao biển
+        }
+        if (playerLevel === 2) {
+            if (roll < 0.5) return 1;
+            if (roll < 0.78) return 2;
+            if (roll < 0.93) return 3;
+            return 0;
+        }
+        // playerLevel >= 3
+        if (roll < 0.4) return 1;
+        if (roll < 0.7) return 2;
+        if (roll < 0.88) return 3;
+        return 0;
+    },
+
+    getSpeedRange: function(value) {
+        if (value === 1) {
+            return { min: 0.6, max: 1.8 };
+        }
+        if (value === 2) {
+            return { min: 1.4, max: 2.6 };
+        }
+        if (value === 3) {
+            return { min: 1.8, max: 3.2 };
+        }
+        return { min: 0.5, max: 1.2 };
+    },
+
+    add: function(playerLevel) {
         var mr = {
             value: 0, // 0 1 2 3 4
             top: 0,
@@ -371,30 +410,19 @@ var MyMarines = {
             velocityY: 0,
         }
 
-        //Đoạn này xuất cá theo tỉ lệ sao:ca1:ca2:ca3:ca4  1:20:5:4:1
-        let preRand = this.getRandomInt(0, 30);
+        var level = playerLevel || MyFish.value;
+        var pickedValue = this.pickMarineType(level);
         var rand = 0;
 
-        if (preRand == 0) {
+        if (pickedValue === 0) {
             rand = 0;
-        }
-
-        if (preRand == 1) {
-            rand = this.getRandomInt(7, 8);
-        }
-
-        if (preRand > 1 && preRand <= 6) {
+        } else if (pickedValue === 1) {
+            rand = this.getRandomInt(1, 2);
+        } else if (pickedValue === 2) {
+            rand = this.getRandomInt(3, 4);
+        } else {
             rand = this.getRandomInt(5, 6);
         }
-
-        if (preRand > 6 && preRand <= 12) {
-            rand = this.getRandomInt(3, 4);
-        }
-        if (preRand > 12) {
-            rand = this.getRandomInt(1, 2);
-        }
-
-        // rand = 8; /////////////////////////////
 
         mr.img = new Image();
         mr.img.src = marines_source[rand];
@@ -404,7 +432,7 @@ var MyMarines = {
             mr.width = 50;
             mr.height = 50;
             mr.velocityX = 0;
-            mr.velocityY = this.getRandomInt(1, 5);
+            mr.velocityY = this.getRandomSpeed(0.6, 1.4);
             mr.top = 0;
             mr.left = this.getRandomInt(0 + 100, MyCanvas.background_width - 100);
         } else {
@@ -428,20 +456,17 @@ var MyMarines = {
                 mr.height = 70;
             }
 
-            if (rand == 7 || rand == 8) {
-                mr.value = 4;
-                mr.width = 160;
-                mr.height = 68;
-            }
+            var speedRange = this.getSpeedRange(mr.value);
+            var speed = this.getRandomSpeed(speedRange.min, speedRange.max);
 
             // right
             if (rand % 2 == 0) {
-                mr.velocityX = this.getRandomInt(1, 5);
+                mr.velocityX = speed;
                 mr.left = 0;
                 mr.top = this.getRandomInt(MyCanvas.canvas_max_top, MyCanvas.background_height - mr.height);
             } else {
                 // left
-                mr.velocityX = this.getRandomInt(-5, -1);
+                mr.velocityX = -speed;
                 mr.left = MyCanvas.background_width;
                 mr.top = this.getRandomInt(MyCanvas.canvas_max_top, MyCanvas.background_height - mr.height);
             }
@@ -486,7 +511,7 @@ var MyCheck = {
         }
 
         while (marines_.length <= marines_number) {
-            MyMarines.add();
+            MyMarines.add(MyFish.value);
         }
     },
 
@@ -547,10 +572,10 @@ var MyCheck = {
         }
 
         while (marines_.length <= marines_number) {
-            MyMarines.add();
+            MyMarines.add(MyFish.value);
         }
 
-        // 
+        //
         if (cur_value != 1 && 0 <= cur_score && cur_score < score_to_level_2) {
             cur_value = 1;
             console.log('level 1');
@@ -561,40 +586,20 @@ var MyCheck = {
             MyNoti.levelUp();
             MyFish.width = 120;
             MyFish.height = 60;
-            marines_number = 9;
+            marines_number = base_marines_number + 1;
             console.log('level 2');
         }
-        if (cur_value != 3 && score_to_level_3 <= cur_score && cur_score < score_to_level_4) {
+        if (cur_value != 3 && score_to_level_3 <= cur_score) {
             cur_value = 3;
             MyHeart.heart = 3;
             MyNoti.levelUp();
-            MyFish.width = 140;
-            MyFish.height = 80;
-            marines_number = 10;
+            MyFish.width = 150;
+            MyFish.height = 90;
+            marines_number = base_marines_number + 2;
             console.log('level 3');
         }
 
-        if (cur_value != 4 && score_to_level_4 <= cur_score && cur_score < score_to_level_5) {
-            cur_value = 4;
-            MyHeart.heart = 3;
-            MyNoti.levelUp();
-            MyFish.width = 160;
-            MyFish.height = 90;
-            marines_number = 11;
-            console.log('level 4');
-        }
-
-        if (cur_value != 5 && score_to_level_5 <= cur_score && cur_score < score_to_level_6) {
-            cur_value = 5;
-            MyHeart.heart = 3;
-            MyNoti.levelUp();
-            MyFish.width = 180;
-            MyFish.height = 100;
-            marines_number = 12;
-            console.log('level 5');
-        }
-
-        if (cur_value != 6 && cur_score >= score_to_level_6) {
+        if (cur_score >= score_to_win) {
             isWin = true;
         }
 
@@ -691,7 +696,7 @@ function init() {
     }
 
     while (marines_.length < marines_number) {
-        MyMarines.add();
+        MyMarines.add(MyFish.value);
     }
 
     console.log('init');
