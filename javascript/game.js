@@ -21,13 +21,24 @@ var global_mouse_y = 0;
 
 
 var marines_number = 8;
+var base_marines_number = 8;
 var isPause = false,
     isWin = false,
     isGameOver = false;
 
 var score_to_level_2 = 20;
 var score_to_level_3 = 40;
-var score_to_level_4 = 60;
+var score_to_level_4 = 70;
+var score_to_level_5 = 100;
+var score_to_level_6 = 140;
+
+var level_thresholds = [
+    score_to_level_2,
+    score_to_level_3,
+    score_to_level_4,
+    score_to_level_5,
+    score_to_level_6,
+];
 
 var background = new Image();
 
@@ -190,17 +201,17 @@ var MyProgressBar = {
     line_color: 'rgb(249,28,12)',
     value_color: 'rgb(226,226,42)',
 
-    line1_offsetX: 0,
-    line2_offsetX: 0,
+    line_offsets: [],
 
 
     init: function() {
         this.value = 0;
-        this.max_value = score_to_level_4;
+        this.max_value = score_to_level_6;
         this.offsetX = MyCanvas.canvas_width - this.width - 50;
         this.offsetY = 50;
-        this.line1_offsetX = this.offsetX + this.width / 3;
-        this.line2_offsetX = this.offsetX + this.width / 3 * 2;
+        this.line_offsets = level_thresholds.map(function(threshold) {
+            return MyProgressBar.offsetX + threshold / MyProgressBar.max_value * MyProgressBar.width;
+        });
     },
 
     draw: function() {
@@ -218,8 +229,10 @@ var MyProgressBar = {
         context_render.fillRect(this.offsetX + trans_x, this.offsetY + trans_y, this.value / this.max_value * this.width, this.height);
 
         context_render.fillStyle = this.line_color;
-        context_render.fillRect(this.line1_offsetX + trans_x, this.offsetY + trans_y - 1, 2, this.height + 1);
-        context_render.fillRect(this.line2_offsetX + trans_x, this.offsetY + trans_y - 1, 2, this.height + 1);
+
+        for (var i = 0; i < this.line_offsets.length; i++) {
+            context_render.fillRect(this.line_offsets[i] + trans_x, this.offsetY + trans_y - 1, 2, this.height + 1);
+        }
     }
 }
 
@@ -323,7 +336,7 @@ var MyMarines = {
             velocityY: 0,
         }
 
-        //Đoạn này xuất cá theo tỉ lệ sao:ca1:ca2:ca3:ca4  1:13:12:4:1
+        //Đoạn này xuất cá theo tỉ lệ sao:ca1:ca2:ca3:ca4  1:20:5:4:1
         let preRand = this.getRandomInt(0, 30);
         var rand = 0;
 
@@ -339,10 +352,10 @@ var MyMarines = {
             rand = this.getRandomInt(5, 6);
         }
 
-        if (preRand > 5 && preRand <= 17) {
+        if (preRand > 5 && preRand <= 10) {
             rand = this.getRandomInt(3, 4);
         }
-        if (preRand > 17) {
+        if (preRand > 10) {
             rand = this.getRandomInt(1, 2);
         }
 
@@ -501,6 +514,7 @@ var MyCheck = {
             MyNoti.levelUp();
             MyFish.width = 186 / 1.7 ;
             MyFish.height = 85 /1.7;
+            marines_number = 9;
             console.log('level 2');
         }
         if (cur_value != 3 && score_to_level_3 <= cur_score && cur_score < score_to_level_4) {
@@ -509,10 +523,31 @@ var MyCheck = {
             MyNoti.levelUp();
             MyFish.width = 186 / 1.4;
             MyFish.height = 85 /1.4;
+            marines_number = 10;
             console.log('level 3');
         }
 
-        if (cur_value != 4 && cur_score >= score_to_level_4) {
+        if (cur_value != 4 && score_to_level_4 <= cur_score && cur_score < score_to_level_5) {
+            cur_value = 4;
+            MyHeart.heart = 3;
+            MyNoti.levelUp();
+            MyFish.width = 186 / 1.2;
+            MyFish.height = 85 /1.2;
+            marines_number = 11;
+            console.log('level 4');
+        }
+
+        if (cur_value != 5 && score_to_level_5 <= cur_score && cur_score < score_to_level_6) {
+            cur_value = 5;
+            MyHeart.heart = 3;
+            MyNoti.levelUp();
+            MyFish.width = 186 / 1.05;
+            MyFish.height = 85 /1.05;
+            marines_number = 12;
+            console.log('level 5');
+        }
+
+        if (cur_value != 6 && cur_score >= score_to_level_6) {
             isWin = true;
         }
 
@@ -596,6 +631,7 @@ function init() {
     MyFish.init();
     MyScore.score = 0;
     MyHeart.heart = 3;
+    marines_number = base_marines_number;
     MyProgressBar.init();
 
     isPause = false;
