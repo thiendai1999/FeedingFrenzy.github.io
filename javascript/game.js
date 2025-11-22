@@ -55,8 +55,8 @@ var global_mouse_y = 0;
 
 
 
-var marines_number = 4;
-var base_marines_number = 4;
+var marines_number = 6;
+var base_marines_number = 6;
 var isPause = true,
     isWin = false,
     isGameOver = false;
@@ -365,35 +365,35 @@ var MyMarines = {
     pickMarineType: function(playerLevel) {
         var roll = Math.random();
         if (playerLevel <= 1) {
-            if (roll < 0.85) return 1; // cá cấp 1 chiếm đa số
-            if (roll < 0.95) return 2;
-            if (roll < 0.985) return 3;
+            if (roll < 0.7) return 1; // cá cấp 1 chiếm đa số
+            if (roll < 0.88) return 2;
+            if (roll < 0.98) return 3;
             return 0; // sao biển
         }
         if (playerLevel === 2) {
-            if (roll < 0.6) return 1;
-            if (roll < 0.85) return 2;
-            if (roll < 0.96) return 3;
+            if (roll < 0.5) return 1;
+            if (roll < 0.78) return 2;
+            if (roll < 0.93) return 3;
             return 0;
         }
         // playerLevel >= 3
-        if (roll < 0.5) return 1;
-        if (roll < 0.78) return 2;
-        if (roll < 0.94) return 3;
+        if (roll < 0.4) return 1;
+        if (roll < 0.7) return 2;
+        if (roll < 0.88) return 3;
         return 0;
     },
 
     getSpeedRange: function(value) {
         if (value === 1) {
-            return { min: 0.35, max: 1.1 };
+            return { min: 0.6, max: 1.8 };
         }
         if (value === 2) {
-            return { min: 0.9, max: 1.8 };
+            return { min: 1.4, max: 2.6 };
         }
         if (value === 3) {
-            return { min: 1.3, max: 2.3 };
+            return { min: 1.8, max: 3.2 };
         }
-        return { min: 0.4, max: 1.0 };
+        return { min: 0.5, max: 1.2 };
     },
 
     add: function(playerLevel) {
@@ -432,7 +432,7 @@ var MyMarines = {
             mr.width = 50;
             mr.height = 50;
             mr.velocityX = 0;
-            mr.velocityY = this.getRandomSpeed(0.45, 1.0);
+            mr.velocityY = this.getRandomSpeed(0.6, 1.4);
             mr.top = 0;
             mr.left = this.getRandomInt(0 + 100, MyCanvas.background_width - 100);
         } else {
