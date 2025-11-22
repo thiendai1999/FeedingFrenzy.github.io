@@ -14,6 +14,41 @@ trans_value = 5;
 trans_x_max = 0;
 trans_y_max = 0;
 
+var DEFAULT_VOCAB_SETS = {
+    "Động vật": [
+        { word: "cat", meaning: "con mèo" },
+        { word: "dog", meaning: "con chó" },
+        { word: "fish", meaning: "con cá" },
+        { word: "bird", meaning: "con chim" },
+        { word: "tiger", meaning: "con hổ" }
+    ],
+    "Màu sắc": [
+        { word: "red", meaning: "màu đỏ" },
+        { word: "blue", meaning: "màu xanh dương" },
+        { word: "green", meaning: "màu xanh lá" },
+        { word: "yellow", meaning: "màu vàng" },
+        { word: "orange", meaning: "màu cam" }
+    ],
+    "Đồ ăn": [
+        { word: "rice", meaning: "cơm" },
+        { word: "bread", meaning: "bánh mì" },
+        { word: "noodle", meaning: "mì" },
+        { word: "meat", meaning: "thịt" },
+        { word: "milk", meaning: "sữa" }
+    ]
+};
+
+var userData = { users: [], scores: {}, vocabStats: {} };
+var activeUser = null;
+var selectedSets = [];
+var quizQueue = [];
+var quizIndex = 0;
+var askedWords = [];
+var quizTimer = null;
+var fishScore = 0;
+var quizScore = 0;
+var hasShownSummary = false;
+
 
 var global_mouse_x = 0;
 var global_mouse_y = 0;
@@ -22,7 +57,7 @@ var global_mouse_y = 0;
 
 var marines_number = 8;
 var base_marines_number = 8;
-var isPause = false,
+var isPause = true,
     isWin = false,
     isGameOver = false;
 
@@ -348,14 +383,14 @@ var MyMarines = {
             rand = this.getRandomInt(7, 8);
         }
 
-        if (preRand > 1 && preRand <= 5) {
+        if (preRand > 1 && preRand <= 6) {
             rand = this.getRandomInt(5, 6);
         }
 
-        if (preRand > 5 && preRand <= 10) {
+        if (preRand > 6 && preRand <= 12) {
             rand = this.getRandomInt(3, 4);
         }
-        if (preRand > 10) {
+        if (preRand > 12) {
             rand = this.getRandomInt(1, 2);
         }
 
@@ -483,7 +518,19 @@ var MyCheck = {
             if (mr.left < fish_x && fish_x < mr.left + mr.width &&
                 mr.top < fish_y && fish_y < mr.top + mr.height) {
                 if (mr.value <= MyFish.value) {
-                    cur_score += mr.value;
+                    if (mr.value == 1) {
+                        cur_score += 2;
+                        fishScore += 2;
+                    } else if (mr.value == 2) {
+                        cur_score += 3;
+                        fishScore += 3;
+                    } else if (mr.value == 3) {
+                        cur_score += 5;
+                        fishScore += 5;
+                    } else {
+                        cur_score += 5;
+                        fishScore += 5;
+                    }
                     marines_.splice(i, 1);
                 } else {
                     MyFish.lostHeart(cur_value);
@@ -512,8 +559,8 @@ var MyCheck = {
             cur_value = 2;
             MyHeart.heart = 3;
             MyNoti.levelUp();
-            MyFish.width = 186 / 1.7 ;
-            MyFish.height = 85 /1.7;
+            MyFish.width = 120;
+            MyFish.height = 60;
             marines_number = 9;
             console.log('level 2');
         }
@@ -521,8 +568,8 @@ var MyCheck = {
             cur_value = 3;
             MyHeart.heart = 3;
             MyNoti.levelUp();
-            MyFish.width = 186 / 1.4;
-            MyFish.height = 85 /1.4;
+            MyFish.width = 140;
+            MyFish.height = 80;
             marines_number = 10;
             console.log('level 3');
         }
@@ -531,8 +578,8 @@ var MyCheck = {
             cur_value = 4;
             MyHeart.heart = 3;
             MyNoti.levelUp();
-            MyFish.width = 186 / 1.2;
-            MyFish.height = 85 /1.2;
+            MyFish.width = 160;
+            MyFish.height = 90;
             marines_number = 11;
             console.log('level 4');
         }
@@ -541,8 +588,8 @@ var MyCheck = {
             cur_value = 5;
             MyHeart.heart = 3;
             MyNoti.levelUp();
-            MyFish.width = 186 / 1.05;
-            MyFish.height = 85 /1.05;
+            MyFish.width = 180;
+            MyFish.height = 100;
             marines_number = 12;
             console.log('level 5');
         }
@@ -724,25 +771,12 @@ function update() {
         0, 0, MyCanvas.canvas_width, MyCanvas.canvas_height);
 
     if (isWin) {
-        console.log("WIN WIN WIN");
-        var img = new Image();
-        img.src = "images/control/win.png";
-        img.onload = function() {
-            context_main.drawImage(img, (MyCanvas.canvas_width - img.width) / 2,
-                (MyCanvas.canvas_height - img.height) / 2);
-        };
-
+        showLevelSummary();
         return;
     }
 
     if (isGameOver) {
-        console.log("GAME OVER");
-        var img = new Image();
-        img.src = "images/control/gameover.jpg";
-        img.onload = function() {
-            context_main.drawImage(img, (MyCanvas.canvas_width - img.width) / 2,
-                (MyCanvas.canvas_height - img.height) / 2);
-        };
+        showLevelSummary();
         return;
     }
 
@@ -757,6 +791,314 @@ background.src = "images/background_level1.jpg";
 
 background.onload = function() {
     init();
+    bindEducationUI();
     update();
+}
+
+// ---------------------------
+// Learning + account helpers
+// ---------------------------
+function persistData() {
+    localStorage.setItem('ff-user-data', JSON.stringify(userData));
+}
+
+function loadUserData() {
+    var cached = localStorage.getItem('ff-user-data');
+    if (cached) {
+        userData = JSON.parse(cached);
+        return;
+    }
+    fetch('data/users.json').then(function(res) { return res.json(); }).then(function(json) {
+        userData = json;
+    }).catch(function() {
+        userData = { users: [], scores: {}, vocabStats: {} };
+    });
+}
+
+function renderVocabOptions() {
+    var container = document.getElementById('vocab-options');
+    container.innerHTML = '';
+    Object.keys(DEFAULT_VOCAB_SETS).forEach(function(key) {
+        var label = document.createElement('label');
+        var input = document.createElement('input');
+        input.type = 'checkbox';
+        input.value = key;
+        label.appendChild(input);
+        var span = document.createElement('span');
+        span.textContent = key + ' (' + DEFAULT_VOCAB_SETS[key].length + ' từ)';
+        label.appendChild(span);
+        container.appendChild(label);
+    });
+}
+
+function toggleTabs(showRegister) {
+    document.getElementById('login-form').classList.toggle('hidden', showRegister);
+    document.getElementById('register-form').classList.toggle('hidden', !showRegister);
+    document.getElementById('login-tab').classList.toggle('active', !showRegister);
+    document.getElementById('register-tab').classList.toggle('active', showRegister);
+}
+
+function showOverlay(id) {
+    ['auth-screen', 'vocab-menu', 'question-modal', 'level-summary'].forEach(function(key) {
+        var element = document.getElementById(key);
+        if (!element) return;
+        element.classList.toggle('hidden', key !== id);
+    });
+}
+
+function buildWordPool() {
+    var combined = [];
+    selectedSets.forEach(function(setName) {
+        var words = DEFAULT_VOCAB_SETS[setName] || [];
+        words.forEach(function(entry) {
+            combined.push(Object.assign({}, entry));
+        });
+    });
+    return combined;
+}
+
+function getStatKey(word) {
+    return (activeUser || 'guest') + '::' + word;
+}
+
+function nextQuizWord(wordPool) {
+    if (askedWords.length >= wordPool.length) {
+        askedWords = [];
+    }
+
+    var mastered = wordPool.filter(function(item) {
+        var key = getStatKey(item.word);
+        var count = userData.vocabStats[key] || 0;
+        return count >= 10;
+    });
+    var learning = wordPool.filter(function(item) {
+        var key = getStatKey(item.word);
+        var count = userData.vocabStats[key] || 0;
+        return count > 0 && count < 10;
+    });
+    var unseen = wordPool.filter(function(item) {
+        var key = getStatKey(item.word);
+        return !userData.vocabStats[key];
+    });
+
+    quizIndex++;
+    if (quizIndex > 10) quizIndex = 1;
+
+    function pick(candidates) {
+        var filtered = candidates.filter(function(item) { return askedWords.indexOf(item.word) === -1; });
+        if (filtered.length === 0) { return null; }
+        return filtered[Math.floor(Math.random() * filtered.length)];
+    }
+
+    var choice = null;
+    if (quizIndex === 1) {
+        choice = pick(unseen) || pick(learning) || pick(mastered);
+    } else if (quizIndex >= 2 && quizIndex <= 8) {
+        choice = pick(learning) || pick(unseen) || pick(mastered);
+    } else {
+        choice = pick(mastered) || pick(learning) || pick(unseen);
+    }
+
+    if (!choice) {
+        choice = wordPool[Math.floor(Math.random() * wordPool.length)];
+    }
+    askedWords.push(choice.word);
+    return choice;
+}
+
+function renderQuestion() {
+    var pool = buildWordPool();
+    if (pool.length === 0) {
+        document.getElementById('question-word').textContent = 'Chưa chọn bộ từ vựng';
+        document.getElementById('answer-options').innerHTML = '';
+        return;
+    }
+    var current = nextQuizWord(pool);
+    var optionsContainer = document.getElementById('answer-options');
+    optionsContainer.innerHTML = '';
+    var distractors = pool.filter(function(item) { return item.word !== current.word; });
+    distractors = distractors.sort(function() { return 0.5 - Math.random(); }).slice(0, 2);
+    var answers = distractors.concat([current]).sort(function() { return 0.5 - Math.random(); });
+    document.getElementById('question-word').textContent = current.word;
+    answers.forEach(function(ans, index) {
+        var button = document.createElement('button');
+        button.textContent = String.fromCharCode(65 + index) + '. ' + ans.meaning;
+        button.onclick = function() {
+            handleAnswer(ans.word === current.word, current.word);
+        };
+        optionsContainer.appendChild(button);
+    });
+    document.getElementById('question-feedback').textContent = '';
+    showOverlay('question-modal');
+}
+
+function handleAnswer(isCorrect, word) {
+    var key = getStatKey(word);
+    userData.vocabStats[key] = userData.vocabStats[key] || 0;
+    if (isCorrect) {
+        userData.vocabStats[key] += 1;
+        quizScore += 10;
+        MyScore.score += 10;
+        document.getElementById('question-feedback').textContent = 'Chính xác! +10 điểm';
+        scheduleNextQuestion(10000);
+    } else {
+        if (userData.vocabStats[key] > 0) {
+            userData.vocabStats[key] -= 1;
+        }
+        MyScore.score = Math.max(0, MyScore.score - 5);
+        quizScore = Math.max(0, quizScore - 5);
+        document.getElementById('question-feedback').textContent = 'Sai rồi! -5 điểm';
+        scheduleNextQuestion(5000);
+    }
+    MyProgressBar.value = MyScore.score;
+    persistData();
+}
+
+function scheduleNextQuestion(delay) {
+    showOverlay(null);
+    if (quizTimer) {
+        clearTimeout(quizTimer);
+    }
+    quizTimer = setTimeout(function() {
+        renderQuestion();
+    }, delay);
+}
+
+function startQuizCycle() {
+    askedWords = [];
+    quizIndex = 0;
+    renderQuestion();
+}
+
+function saveHighScore(level, totalScore) {
+    if (!activeUser) return;
+    if (!userData.scores[level]) {
+        userData.scores[level] = {};
+    }
+    var prev = userData.scores[level][activeUser];
+    if (!prev || totalScore > prev) {
+        userData.scores[level][activeUser] = totalScore;
+        persistData();
+    }
+}
+
+function renderLeaderboard(level) {
+    var board = document.getElementById('leaderboard');
+    board.classList.remove('hidden');
+    var scores = userData.scores[level] || {};
+    var entries = Object.keys(scores).map(function(name) { return { name: name, score: scores[name] }; });
+    entries.sort(function(a, b) { return b.score - a.score; });
+    entries = entries.slice(0, 10);
+    var html = '<table><thead><tr><th>Hạng</th><th>Người chơi</th><th>Điểm</th></tr></thead><tbody>';
+    entries.forEach(function(item, idx) {
+        html += '<tr><td>' + (idx + 1) + '</td><td>' + item.name + '</td><td>' + item.score + '</td></tr>';
+    });
+    html += '</tbody></table>';
+    board.innerHTML = html;
+}
+
+function showLevelSummary() {
+    if (hasShownSummary) return;
+    hasShownSummary = true;
+    isPause = true;
+    var bonus = Math.max(0, MyHeart.heart) * 20;
+    var total = MyScore.score + bonus;
+    document.getElementById('fish-score').textContent = 'Điểm ăn cá: ' + fishScore;
+    document.getElementById('bonus-score').textContent = 'Điểm bonus: ' + bonus;
+    document.getElementById('total-score').textContent = 'Tổng điểm: ' + total;
+    var levelKey = 'level_' + MyFish.value;
+    saveHighScore(levelKey, total);
+    showOverlay('level-summary');
+}
+
+function startGameFlow() {
+    isPause = false;
+    hasShownSummary = false;
+    fishScore = 0;
+    quizScore = 0;
+    MyScore.score = 0;
+    MyHeart.heart = 3;
+    update();
+    startQuizCycle();
+}
+
+function bindEducationUI() {
+    loadUserData();
+    renderVocabOptions();
+    showOverlay('auth-screen');
+    document.getElementById('login-tab').onclick = function() { toggleTabs(false); };
+    document.getElementById('register-tab').onclick = function() { toggleTabs(true); };
+    document.getElementById('login-form').addEventListener('submit', function(e) {
+        e.preventDefault();
+        var username = document.getElementById('login-username').value.trim();
+        var password = document.getElementById('login-password').value;
+        var user = userData.users.find(function(u) { return u.username === username && u.password === password; });
+        if (user) {
+            activeUser = username;
+            document.getElementById('login-message').textContent = '';
+            showOverlay('vocab-menu');
+        } else {
+            document.getElementById('login-message').textContent = 'Tên đăng nhập hoặc mật khẩu chưa đúng';
+        }
+    });
+
+    document.getElementById('register-form').addEventListener('submit', function(e) {
+        e.preventDefault();
+        var username = document.getElementById('register-username').value.trim();
+        var password = document.getElementById('register-password').value;
+        var confirm = document.getElementById('register-password-confirm').value;
+        if (!username || !password) {
+            document.getElementById('register-message').textContent = 'Vui lòng nhập đủ thông tin';
+            return;
+        }
+        if (password !== confirm) {
+            document.getElementById('register-message').textContent = 'Mật khẩu không khớp';
+            return;
+        }
+        var existed = userData.users.some(function(u) { return u.username === username; });
+        if (existed) {
+            document.getElementById('register-message').textContent = 'Tên đăng nhập đã tồn tại';
+            return;
+        }
+        userData.users.push({ username: username, password: password });
+        persistData();
+        document.getElementById('register-message').textContent = 'Đã tạo tài khoản thành công';
+        document.getElementById('login-username').value = username;
+        toggleTabs(false);
+    });
+
+    document.getElementById('start-game').onclick = function() {
+        selectedSets = [];
+        document.querySelectorAll('#vocab-options input[type="checkbox"]').forEach(function(input) {
+            if (input.checked) {
+                selectedSets.push(input.value);
+            }
+        });
+        if (selectedSets.length === 0) {
+            selectedSets = Object.keys(DEFAULT_VOCAB_SETS);
+        }
+        showOverlay(null);
+        startGameFlow();
+    };
+
+    document.getElementById('logout').onclick = function() {
+        activeUser = null;
+        showOverlay('auth-screen');
+    };
+    document.getElementById('logout-end').onclick = function() {
+        activeUser = null;
+        showOverlay('auth-screen');
+    };
+    document.getElementById('back-to-menu').onclick = function() {
+        showOverlay('vocab-menu');
+    };
+    document.getElementById('next-level').onclick = function() {
+        showOverlay(null);
+        isPause = false;
+        update();
+    };
+    document.getElementById('view-leaderboard').onclick = function() {
+        renderLeaderboard('level_' + MyFish.value);
+    };
 }
 
