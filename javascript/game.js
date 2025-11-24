@@ -14,20 +14,93 @@ trans_value = 5;
 trans_x_max = 0;
 trans_y_max = 0;
 
+window.CURRENT_STAGE = null;
+
+// Stage runtime
+let stageScore = 0;
+let stageTimer = 0;
+let stageTimeLimit = null;
+let stageTargetScore = 0;
+let stageQuizCount = 0;
+let stageMode = "normal";
+let stageComplete = false;
+let quizShown = 0;
+let lastTimestamp = null;
+
+function loadStage(chapterId, stageId) {
+    const chapter = GAME_STAGES.chapters.find(c => c.id === chapterId);
+    const stage = chapter.stages.find(s => s.id === stageId);
+    window.CURRENT_STAGE = stage;
+}
+
+function getSpawnRates() { return window.CURRENT_STAGE.spawn; }
+function getStageSpeed() { return window.CURRENT_STAGE.speed; }
+function getStageMode() { return window.CURRENT_STAGE.mode; }
+function getStageBackground() { return window.CURRENT_STAGE.background; }
+
+function randomRange(min, max) {
+    return Math.random() * (max - min) + min;
+}
+
+// TEMP: auto load stage 1-1 for now:
+loadStage(1, 1);
+
+var DEFAULT_VOCAB_SETS = {
+    "Động vật": [
+        { word: "cat", meaning: "con mèo" },
+        { word: "dog", meaning: "con chó" },
+        { word: "fish", meaning: "con cá" },
+        { word: "bird", meaning: "con chim" },
+        { word: "tiger", meaning: "con hổ" }
+    ],
+    "Màu sắc": [
+        { word: "red", meaning: "màu đỏ" },
+        { word: "blue", meaning: "màu xanh dương" },
+        { word: "green", meaning: "màu xanh lá" },
+        { word: "yellow", meaning: "màu vàng" },
+        { word: "orange", meaning: "màu cam" }
+    ],
+    "Đồ ăn": [
+        { word: "rice", meaning: "cơm" },
+        { word: "bread", meaning: "bánh mì" },
+        { word: "noodle", meaning: "mì" },
+        { word: "meat", meaning: "thịt" },
+        { word: "milk", meaning: "sữa" }
+    ]
+};
+
+var userData = { users: [], scores: {}, vocabStats: {} };
+var activeUser = null;
+var selectedSets = [];
+var quizQueue = [];
+var quizIndex = 0;
+var askedWords = [];
+var quizTimer = null;
+var fishScore = 0;
+var quizScore = 0;
+var hasShownSummary = false;
+
 
 var global_mouse_x = 0;
 var global_mouse_y = 0;
 
 
 
-var marines_number = 8;
-var isPause = false,
+var marines_number = 4;
+var base_marines_number = 4;
+var isPause = true,
     isWin = false,
     isGameOver = false;
 
-var score_to_level_2 = 20;
-var score_to_level_3 = 40;
-var score_to_level_4 = 60;
+var score_to_level_2 = 30;
+var score_to_level_3 = 80;
+var score_to_win = 140;
+
+var level_thresholds = [
+    score_to_level_2,
+    score_to_level_3,
+    score_to_win,
+];
 
 var background = new Image();
 
@@ -190,17 +263,17 @@ var MyProgressBar = {
     line_color: 'rgb(249,28,12)',
     value_color: 'rgb(226,226,42)',
 
-    line1_offsetX: 0,
-    line2_offsetX: 0,
+    line_offsets: [],
 
 
     init: function() {
         this.value = 0;
-        this.max_value = score_to_level_4;
+        this.max_value = score_to_win;
         this.offsetX = MyCanvas.canvas_width - this.width - 50;
         this.offsetY = 50;
-        this.line1_offsetX = this.offsetX + this.width / 3;
-        this.line2_offsetX = this.offsetX + this.width / 3 * 2;
+        this.line_offsets = level_thresholds.map(function(threshold) {
+            return MyProgressBar.offsetX + threshold / MyProgressBar.max_value * MyProgressBar.width;
+        });
     },
 
     draw: function() {
@@ -215,12 +288,25 @@ var MyProgressBar = {
         context_render.fillRect(this.offsetX + trans_x, this.offsetY + trans_y, this.width, this.height);
 
         context_render.fillStyle = this.value_color;
-        context_render.fillRect(this.offsetX + trans_x, this.offsetY + trans_y, this.value / this.max_value * this.width, this.height);
+        context_render.fillRect(
+            this.offsetX + trans_x,
+            this.offsetY + trans_y,
+            this.value / this.max_value * this.width,
+            this.height
+        );
 
         context_render.fillStyle = this.line_color;
-        context_render.fillRect(this.line1_offsetX + trans_x, this.offsetY + trans_y - 1, 2, this.height + 1);
-        context_render.fillRect(this.line2_offsetX + trans_x, this.offsetY + trans_y - 1, 2, this.height + 1);
+
+        for (var i = 0; i < this.line_offsets.length; i++) {
+            context_render.fillRect(this.line_offsets[i] + trans_x, this.offsetY + trans_y - 1, 2, this.height + 1);
+        }
     }
+}
+
+function updateProgress(ratio) {
+    MyProgressBar.max_value = stageTargetScore || MyProgressBar.max_value;
+    var progressValue = ratio * MyProgressBar.max_value;
+    MyProgressBar.value = Math.min(progressValue, MyProgressBar.max_value);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -310,6 +396,8 @@ var MyMarines = {
     },
 
     add: function() {
+        const spawn = getSpawnRates();
+        const speedConfig = getStageSpeed();
         var mr = {
             value: 0, // 0 1 2 3 4
             top: 0,
@@ -323,80 +411,68 @@ var MyMarines = {
             velocityY: 0,
         }
 
-        //Đoạn này xuất cá theo tỉ lệ sao:ca1:ca2:ca3:ca4  1:13:12:4:1
-        let preRand = this.getRandomInt(0, 30);
+        let r = Math.random();
+        let type = "small";
+        if (r < spawn.small) type = "small";
+        else if (r < spawn.small + spawn.medium) type = "medium";
+        else if (r < spawn.small + spawn.medium + spawn.large) type = "large";
+        else type = "shark";
+
         var rand = 0;
 
-        if (preRand == 0) {
-            rand = 0;
-        }
-
-        if (preRand == 1) {
+        if (type === 'small') {
+            rand = this.getRandomInt(1, 2);
+        } else if (type === 'medium') {
+            rand = this.getRandomInt(3, 4);
+        } else if (type === 'large') {
+            rand = this.getRandomInt(5, 6);
+        } else {
             rand = this.getRandomInt(7, 8);
         }
-
-        if (preRand > 1 && preRand <= 5) {
-            rand = this.getRandomInt(5, 6);
-        }
-
-        if (preRand > 5 && preRand <= 17) {
-            rand = this.getRandomInt(3, 4);
-        }
-        if (preRand > 17) {
-            rand = this.getRandomInt(1, 2);
-        }
-
-        // rand = 8; /////////////////////////////
 
         mr.img = new Image();
         mr.img.src = marines_source[rand];
 
-        if (rand == 0) {
+        mr.velocityY = 0;
+
+        mr.type = type;
+
+        if (rand == 1 || rand == 2) {
             mr.value = 1;
-            mr.width = 50;
+            mr.width = 70;
+            mr.height = 35;
+        }
+
+        if (rand == 3 || rand == 4) {
+            mr.value = 2;
+            mr.width = 100;
             mr.height = 50;
-            mr.velocityX = 0;
-            mr.velocityY = this.getRandomInt(1, 5);
-            mr.top = 0;
-            mr.left = this.getRandomInt(0 + 100, MyCanvas.background_width - 100);
+        }
+
+        if (rand == 5 || rand == 6) {
+            mr.value = 3;
+            mr.width = 100;
+            mr.height = 70;
+        }
+
+        if (rand == 7 || rand == 8) {
+            mr.value = 4;
+            mr.width = 140;
+            mr.height = 80;
+        }
+
+        var swimSpeed = randomRange(speedConfig.min, speedConfig.max);
+
+        // right
+        if (rand % 2 == 0) {
+            mr.velocityX = swimSpeed;
+            mr.left = 0;
+            mr.top = this.getRandomInt(MyCanvas.canvas_max_top, MyCanvas.background_height - mr.height);
         } else {
-            mr.velocityY = 0;
-
-            if (rand == 1 || rand == 2) {
-                mr.value = 1;
-                mr.width = 70;
-                mr.height = 35;
-            }
-
-            if (rand == 3 || rand == 4) {
-                mr.value = 2;
-                mr.width = 100;
-                mr.height = 50;
-            }
-
-            if (rand == 5 || rand == 6) {
-                mr.value = 3;
-                mr.width = 100;
-                mr.height = 70;
-            }
-
-            if (rand == 7 || rand == 8) {
-                mr.value = 4;
-                mr.width = 160;
-                mr.height = 68;
-            }
-
-            // right
-            if (rand % 2 == 0) {
-                mr.velocityX = this.getRandomInt(1, 5);
-                mr.left = 0;
-                mr.top = this.getRandomInt(MyCanvas.canvas_max_top, MyCanvas.background_height - mr.height);
-            } else {
-                // left
-                mr.velocityX = this.getRandomInt(-5, -1);
-                mr.left = MyCanvas.background_width;
-                mr.top = this.getRandomInt(MyCanvas.canvas_max_top, MyCanvas.background_height - mr.height);
-            }
+            // left
+            mr.velocityX = -swimSpeed;
+            mr.left = MyCanvas.background_width;
+            mr.top = this.getRandomInt(MyCanvas.canvas_max_top, MyCanvas.background_height - mr.height);
         }
 
         marines_.push(mr);
@@ -404,6 +480,14 @@ var MyMarines = {
 
     update: function() {
         for (var i = 0; i < marines_.length; i++) {
+            if (stageMode === "hunting") {
+                if (marines_[i].type !== "small") marines_[i].dangerous = true;
+            }
+
+            if (stageMode === "super" && !marines_[i].superBoosted) {
+                marines_[i].velocityX *= 1.3;
+                marines_[i].superBoosted = true;
+            }
             marines_[i].left += marines_[i].velocityX;
             marines_[i].top += marines_[i].velocityY;
         }
@@ -438,7 +522,7 @@ var MyCheck = {
         }
 
         while (marines_.length <= marines_number) {
-            MyMarines.add();
+            MyMarines.add(MyFish.value);
         }
     },
 
@@ -449,6 +533,7 @@ var MyCheck = {
         var cur_score = MyScore.score;
         var cur_heart = MyHeart.heart;
         var cur_value = MyFish.value;
+        var scoreGain = 0;
 
         // immortal :))
         if (cur_value == 100) {
@@ -469,8 +554,28 @@ var MyCheck = {
 
             if (mr.left < fish_x && fish_x < mr.left + mr.width &&
                 mr.top < fish_y && fish_y < mr.top + mr.height) {
-                if (mr.value <= MyFish.value) {
-                    cur_score += mr.value;
+                if (mr.value <= MyFish.value && !mr.dangerous) {
+                    if (mr.value == 1) {
+                        cur_score += 2;
+                        fishScore += 2;
+                        scoreGain = 2;
+                    } else if (mr.value == 2) {
+                        cur_score += 3;
+                        fishScore += 3;
+                        scoreGain = 3;
+                    } else if (mr.value == 3) {
+                        cur_score += 5;
+                        fishScore += 5;
+                        scoreGain = 5;
+                    } else {
+                        cur_score += 5;
+                        fishScore += 5;
+                        scoreGain = 5;
+                    }
+                    stageScore += scoreGain;
+                    if (stageTargetScore > 0) {
+                        updateProgress(stageScore / stageTargetScore);
+                    }
                     marines_.splice(i, 1);
                 } else {
                     MyFish.lostHeart(cur_value);
@@ -487,39 +592,51 @@ var MyCheck = {
         }
 
         while (marines_.length <= marines_number) {
-            MyMarines.add();
+            MyMarines.add(MyFish.value);
         }
 
-        // 
-        if (cur_value != 1 && 0 <= cur_score && cur_score < score_to_level_2) {
-            cur_value = 1;
-            console.log('level 1');
-        }
-        if (cur_value != 2 && score_to_level_2 <= cur_score && cur_score < score_to_level_3) {
-            cur_value = 2;
-            MyHeart.heart = 3;
-            MyNoti.levelUp();
-            MyFish.width = 186 / 1.7 ;
-            MyFish.height = 85 /1.7;
-            console.log('level 2');
-        }
-        if (cur_value != 3 && score_to_level_3 <= cur_score && cur_score < score_to_level_4) {
-            cur_value = 3;
-            MyHeart.heart = 3;
-            MyNoti.levelUp();
-            MyFish.width = 186 / 1.4;
-            MyFish.height = 85 /1.4;
-            console.log('level 3');
+        //
+        if (stageMode !== "hunting") {
+            if (cur_value != 1 && 0 <= cur_score && cur_score < score_to_level_2) {
+                cur_value = 1;
+                console.log('level 1');
+            }
+            if (cur_value != 2 && score_to_level_2 <= cur_score && cur_score < score_to_level_3) {
+                cur_value = 2;
+                MyHeart.heart = 3;
+                MyNoti.levelUp();
+                MyFish.width = 120;
+                MyFish.height = 60;
+                marines_number = base_marines_number + 1;
+                console.log('level 2');
+            }
+            if (cur_value != 3 && score_to_level_3 <= cur_score) {
+                cur_value = 3;
+                MyHeart.heart = 3;
+                MyNoti.levelUp();
+                MyFish.width = 150;
+                MyFish.height = 90;
+                marines_number = base_marines_number + 2;
+                console.log('level 3');
+            }
         }
 
-        if (cur_value != 4 && cur_score >= score_to_level_4) {
+        if (!stageComplete && stageTargetScore > 0 && stageScore >= stageTargetScore) {
+            endStage(true);
+        }
+
+        if (cur_score >= score_to_win) {
             isWin = true;
         }
 
         // UI
         MyFish.value = cur_value;
         MyScore.score = cur_score;
-        MyProgressBar.value = cur_score;
+        if (stageTargetScore > 0) {
+            MyProgressBar.value = Math.min(stageScore, stageTargetScore);
+        } else {
+            MyProgressBar.value = cur_score;
+        }
     },
 }
 
@@ -596,6 +713,7 @@ function init() {
     MyFish.init();
     MyScore.score = 0;
     MyHeart.heart = 3;
+    marines_number = base_marines_number;
     MyProgressBar.init();
 
     isPause = false;
@@ -608,7 +726,7 @@ function init() {
     }
 
     while (marines_.length < marines_number) {
-        MyMarines.add();
+        MyMarines.add(MyFish.value);
     }
 
     console.log('init');
@@ -661,7 +779,17 @@ function beforeupdate() {
     trans_y = (trans_y > trans_y_max) ? trans_y_max : trans_y;
 }
 
-function update() {
+function update(timestamp) {
+
+    var deltaTime = 0;
+    if (typeof timestamp === "number") {
+        if (lastTimestamp !== null) {
+            deltaTime = (timestamp - lastTimestamp) / 1000;
+        }
+        lastTimestamp = timestamp;
+    } else {
+        lastTimestamp = performance.now();
+    }
 
     // draw background
     // var background = new Image();
@@ -687,26 +815,21 @@ function update() {
 
         0, 0, MyCanvas.canvas_width, MyCanvas.canvas_height);
 
-    if (isWin) {
-        console.log("WIN WIN WIN");
-        var img = new Image();
-        img.src = "images/control/win.png";
-        img.onload = function() {
-            context_main.drawImage(img, (MyCanvas.canvas_width - img.width) / 2,
-                (MyCanvas.canvas_height - img.height) / 2);
-        };
+    if (stageTimeLimit !== null && !stageComplete) {
+        stageTimer += deltaTime;
 
+        if (stageTimer >= stageTimeLimit) {
+            endStage(false); // failed
+        }
+    }
+
+    if (isWin) {
+        showLevelSummary();
         return;
     }
 
     if (isGameOver) {
-        console.log("GAME OVER");
-        var img = new Image();
-        img.src = "images/control/gameover.jpg";
-        img.onload = function() {
-            context_main.drawImage(img, (MyCanvas.canvas_width - img.width) / 2,
-                (MyCanvas.canvas_height - img.height) / 2);
-        };
+        showLevelSummary();
         return;
     }
 
@@ -721,6 +844,493 @@ background.src = "images/background_level1.jpg";
 
 background.onload = function() {
     init();
+    bindEducationUI();
     update();
+}
+
+// ---------------------------
+// Learning + account helpers
+// ---------------------------
+function persistData() {
+    localStorage.setItem('ff-user-data', JSON.stringify(userData));
+}
+
+function loadUserData() {
+    var cached = localStorage.getItem('ff-user-data');
+    if (cached) {
+        userData = JSON.parse(cached);
+        return;
+    }
+    fetch('data/users.json').then(function(res) { return res.json(); }).then(function(json) {
+        userData = json;
+    }).catch(function() {
+        userData = { users: [], scores: {}, vocabStats: {} };
+    });
+}
+
+function renderVocabOptions() {
+    var container = document.getElementById('vocab-options');
+    container.innerHTML = '';
+    Object.keys(DEFAULT_VOCAB_SETS).forEach(function(key) {
+        var label = document.createElement('label');
+        var input = document.createElement('input');
+        input.type = 'checkbox';
+        input.value = key;
+        label.appendChild(input);
+        var span = document.createElement('span');
+        span.textContent = key + ' (' + DEFAULT_VOCAB_SETS[key].length + ' từ)';
+        label.appendChild(span);
+        container.appendChild(label);
+    });
+}
+
+function toggleTabs(showRegister) {
+    document.getElementById('login-form').classList.toggle('hidden', showRegister);
+    document.getElementById('register-form').classList.toggle('hidden', !showRegister);
+    document.getElementById('login-tab').classList.toggle('active', !showRegister);
+    document.getElementById('register-tab').classList.toggle('active', showRegister);
+}
+
+function showOverlay(id) {
+    ['auth-screen', 'vocab-menu', 'question-modal', 'level-summary'].forEach(function(key) {
+        var element = document.getElementById(key);
+        if (!element) return;
+        element.classList.toggle('hidden', key !== id);
+    });
+}
+
+function buildWordPool() {
+    var combined = [];
+    selectedSets.forEach(function(setName) {
+        var words = DEFAULT_VOCAB_SETS[setName] || [];
+        words.forEach(function(entry) {
+            combined.push(Object.assign({}, entry));
+        });
+    });
+    return combined;
+}
+
+function getStatKey(word) {
+    return (activeUser || 'guest') + '::' + word;
+}
+
+function nextQuizWord(wordPool) {
+    if (askedWords.length >= wordPool.length) {
+        askedWords = [];
+    }
+
+    var mastered = wordPool.filter(function(item) {
+        var key = getStatKey(item.word);
+        var count = userData.vocabStats[key] || 0;
+        return count >= 10;
+    });
+    var learning = wordPool.filter(function(item) {
+        var key = getStatKey(item.word);
+        var count = userData.vocabStats[key] || 0;
+        return count > 0 && count < 10;
+    });
+    var unseen = wordPool.filter(function(item) {
+        var key = getStatKey(item.word);
+        return !userData.vocabStats[key];
+    });
+
+    quizIndex++;
+    if (quizIndex > 10) quizIndex = 1;
+
+    function pick(candidates) {
+        var filtered = candidates.filter(function(item) { return askedWords.indexOf(item.word) === -1; });
+        if (filtered.length === 0) { return null; }
+        return filtered[Math.floor(Math.random() * filtered.length)];
+    }
+
+    var choice = null;
+    if (quizIndex === 1) {
+        choice = pick(unseen) || pick(learning) || pick(mastered);
+    } else if (quizIndex >= 2 && quizIndex <= 8) {
+        choice = pick(learning) || pick(unseen) || pick(mastered);
+    } else {
+        choice = pick(mastered) || pick(learning) || pick(unseen);
+    }
+
+    if (!choice) {
+        choice = wordPool[Math.floor(Math.random() * wordPool.length)];
+    }
+    askedWords.push(choice.word);
+    return choice;
+}
+
+function renderQuestion() {
+    var pool = buildWordPool();
+    if (pool.length === 0) {
+        document.getElementById('question-word').textContent = 'Chưa chọn bộ từ vựng';
+        document.getElementById('answer-options').innerHTML = '';
+        return;
+    }
+    var current = nextQuizWord(pool);
+    var optionsContainer = document.getElementById('answer-options');
+    optionsContainer.innerHTML = '';
+    var distractors = pool.filter(function(item) { return item.word !== current.word; });
+    distractors = distractors.sort(function() { return 0.5 - Math.random(); }).slice(0, 2);
+    var answers = distractors.concat([current]).sort(function() { return 0.5 - Math.random(); });
+    document.getElementById('question-word').textContent = current.word;
+    answers.forEach(function(ans, index) {
+        var button = document.createElement('button');
+        button.textContent = String.fromCharCode(65 + index) + '. ' + ans.meaning;
+        button.onclick = function() {
+            handleAnswer(ans.word === current.word, current.word);
+        };
+        optionsContainer.appendChild(button);
+    });
+    document.getElementById('question-feedback').textContent = '';
+    showOverlay('question-modal');
+}
+
+function handleAnswer(isCorrect, word) {
+    var key = getStatKey(word);
+    userData.vocabStats[key] = userData.vocabStats[key] || 0;
+    if (isCorrect) {
+        userData.vocabStats[key] += 1;
+        quizScore += 10;
+        MyScore.score += 10;
+        document.getElementById('question-feedback').textContent = 'Chính xác! +10 điểm';
+        scheduleNextQuestion(10000);
+    } else {
+        if (userData.vocabStats[key] > 0) {
+            userData.vocabStats[key] -= 1;
+        }
+        MyScore.score = Math.max(0, MyScore.score - 5);
+        quizScore = Math.max(0, quizScore - 5);
+        document.getElementById('question-feedback').textContent = 'Sai rồi! -5 điểm';
+        scheduleNextQuestion(5000);
+    }
+    if (stageTargetScore > 0) {
+        MyProgressBar.value = Math.min(stageScore, stageTargetScore);
+    } else {
+        MyProgressBar.value = MyScore.score;
+    }
+    persistData();
+}
+
+function scheduleNextQuestion(delay) {
+    showOverlay(null);
+    if (quizTimer) {
+        clearTimeout(quizTimer);
+    }
+    if (stageComplete) {
+        return;
+    }
+    if (quizShown >= stageQuizCount) {
+        return;
+    }
+    quizTimer = setTimeout(function() {
+        renderQuestion();
+        quizShown++;
+    }, delay);
+}
+
+function startQuizCycle() {
+    askedWords = [];
+    quizIndex = 0;
+    if (stageQuizCount > 0) {
+        renderQuestion();
+        quizShown = 1;
+    }
+}
+
+function saveHighScore(level, totalScore) {
+    if (!activeUser) return;
+    if (!userData.scores[level]) {
+        userData.scores[level] = {};
+    }
+    var prev = userData.scores[level][activeUser];
+    if (!prev || totalScore > prev) {
+        userData.scores[level][activeUser] = totalScore;
+        persistData();
+    }
+}
+
+function renderLeaderboard(level) {
+    var board = document.getElementById('leaderboard');
+    board.classList.remove('hidden');
+    var scores = userData.scores[level] || {};
+    var entries = Object.keys(scores).map(function(name) { return { name: name, score: scores[name] }; });
+    entries.sort(function(a, b) { return b.score - a.score; });
+    entries = entries.slice(0, 10);
+    var html = '<table><thead><tr><th>Hạng</th><th>Người chơi</th><th>Điểm</th></tr></thead><tbody>';
+    entries.forEach(function(item, idx) {
+        html += '<tr><td>' + (idx + 1) + '</td><td>' + item.name + '</td><td>' + item.score + '</td></tr>';
+    });
+    html += '</tbody></table>';
+    board.innerHTML = html;
+}
+
+function showLevelSummary() {
+    if (hasShownSummary) return;
+    hasShownSummary = true;
+    isPause = true;
+    var bonus = Math.max(0, MyHeart.heart) * 20;
+    var total = MyScore.score + bonus;
+    document.getElementById('fish-score').textContent = 'Điểm ăn cá: ' + fishScore;
+    document.getElementById('bonus-score').textContent = 'Điểm bonus: ' + bonus;
+    document.getElementById('total-score').textContent = 'Tổng điểm: ' + total;
+    var levelKey = 'level_' + MyFish.value;
+    saveHighScore(levelKey, total);
+    showOverlay('level-summary');
+}
+
+function showStageCompleteScreen(score) {
+    var header = document.querySelector('#level-summary h2');
+    if (header) {
+        header.textContent = 'Hoàn thành màn';
+    }
+    document.getElementById('fish-score').textContent = 'Điểm ăn cá: ' + score;
+    document.getElementById('bonus-score').textContent = 'Mục tiêu: ' + stageTargetScore;
+    document.getElementById('total-score').textContent = 'Tổng điểm: ' + score;
+    var nextBtn = document.getElementById('next-level');
+    if (nextBtn) {
+        nextBtn.textContent = 'Chọn màn tiếp';
+        nextBtn.onclick = returnToStageSelect;
+    }
+    var backBtn = document.getElementById('back-to-menu');
+    if (backBtn) {
+        backBtn.onclick = returnToStageSelect;
+    }
+    showOverlay('level-summary');
+}
+
+function showStageFailedScreen(score) {
+    var header = document.querySelector('#level-summary h2');
+    if (header) {
+        header.textContent = 'Thua màn';
+    }
+    document.getElementById('fish-score').textContent = 'Điểm ăn cá: ' + score;
+    document.getElementById('bonus-score').textContent = 'Hãy thử lại để đạt mục tiêu ' + stageTargetScore;
+    document.getElementById('total-score').textContent = 'Tổng điểm: ' + score;
+    var nextBtn = document.getElementById('next-level');
+    if (nextBtn) {
+        nextBtn.textContent = 'Quay lại chọn màn';
+        nextBtn.onclick = returnToStageSelect;
+    }
+    var backBtn = document.getElementById('back-to-menu');
+    if (backBtn) {
+        backBtn.onclick = returnToStageSelect;
+    }
+    showOverlay('level-summary');
+}
+
+function endStage(success) {
+    stageComplete = true;
+    isPause = true;
+    if (quizTimer) {
+        clearTimeout(quizTimer);
+        quizTimer = null;
+    }
+    showOverlay(null);
+
+    if (success) {
+        showStageCompleteScreen(stageScore);
+
+        if (CURRENT_CHAPTER && window.CURRENT_STAGE) {
+            unlockNextStage(CURRENT_CHAPTER.id, window.CURRENT_STAGE.id + 1);
+        }
+    } else {
+        showStageFailedScreen(stageScore);
+    }
+}
+
+function startGame() {
+    const cfg = window.CURRENT_STAGE;
+    if (!cfg) return;
+
+    // Load current stage settings
+    stageScore = 0;
+    stageTimer = 0;
+    stageComplete = false;
+
+    stageMode = cfg.mode;
+    stageTargetScore = cfg.targetScore || 0;
+    stageTimeLimit = cfg.timeLimit || null;
+    stageQuizCount = cfg.quizCount || 0;
+    quizShown = 0;
+
+    // Set background if provided:
+    if (cfg.background) {
+        document.getElementById("game-canvas").style.backgroundImage =
+            `url('${cfg.background}')`;
+    }
+
+    document.getElementById("world-map-screen").style.display = "none";
+    document.getElementById("stage-select-screen").style.display = "none";
+    document.getElementById("wrapper").style.display = "block";
+
+    MyProgressBar.max_value = stageTargetScore || score_to_win;
+    MyProgressBar.line_offsets = level_thresholds.map(function(threshold) {
+        return MyProgressBar.offsetX + threshold / MyProgressBar.max_value * MyProgressBar.width;
+    });
+    MyProgressBar.value = 0;
+
+    isWin = false;
+    isGameOver = false;
+    lastTimestamp = null;
+    startGameFlow();
+}
+
+function startGameFlow() {
+    isPause = false;
+    hasShownSummary = false;
+    fishScore = 0;
+    quizScore = 0;
+    MyScore.score = 0;
+    MyHeart.heart = 3;
+    update();
+    startQuizCycle();
+}
+
+function bindEducationUI() {
+    loadUserData();
+    renderVocabOptions();
+    showOverlay('auth-screen');
+    document.getElementById('login-tab').onclick = function() { toggleTabs(false); };
+    document.getElementById('register-tab').onclick = function() { toggleTabs(true); };
+    document.getElementById('login-form').addEventListener('submit', function(e) {
+        e.preventDefault();
+        var username = document.getElementById('login-username').value.trim();
+        var password = document.getElementById('login-password').value;
+        var user = userData.users.find(function(u) { return u.username === username && u.password === password; });
+        if (user) {
+            activeUser = username;
+            document.getElementById('login-message').textContent = '';
+            showOverlay('vocab-menu');
+        } else {
+            document.getElementById('login-message').textContent = 'Tên đăng nhập hoặc mật khẩu chưa đúng';
+        }
+    });
+
+    document.getElementById('register-form').addEventListener('submit', function(e) {
+        e.preventDefault();
+        var username = document.getElementById('register-username').value.trim();
+        var password = document.getElementById('register-password').value;
+        var confirm = document.getElementById('register-password-confirm').value;
+        if (!username || !password) {
+            document.getElementById('register-message').textContent = 'Vui lòng nhập đủ thông tin';
+            return;
+        }
+        if (password !== confirm) {
+            document.getElementById('register-message').textContent = 'Mật khẩu không khớp';
+            return;
+        }
+        var existed = userData.users.some(function(u) { return u.username === username; });
+        if (existed) {
+            document.getElementById('register-message').textContent = 'Tên đăng nhập đã tồn tại';
+            return;
+        }
+        userData.users.push({ username: username, password: password });
+        persistData();
+        document.getElementById('register-message').textContent = 'Đã tạo tài khoản thành công';
+        document.getElementById('login-username').value = username;
+        toggleTabs(false);
+    });
+
+    document.getElementById('start-game').onclick = function() {
+        selectedSets = [];
+        document.querySelectorAll('#vocab-options input[type="checkbox"]').forEach(function(input) {
+            if (input.checked) {
+                selectedSets.push(input.value);
+            }
+        });
+        if (selectedSets.length === 0) {
+            selectedSets = Object.keys(DEFAULT_VOCAB_SETS);
+        }
+        showOverlay(null);
+        document.getElementById("world-map-screen").style.display = "block";
+        document.getElementById("stage-select-screen").style.display = "none";
+        document.getElementById("wrapper").style.display = "none";
+    };
+
+    document.getElementById('logout').onclick = function() {
+        activeUser = null;
+        showOverlay('auth-screen');
+    };
+    document.getElementById('logout-end').onclick = function() {
+        activeUser = null;
+        showOverlay('auth-screen');
+    };
+    document.getElementById('back-to-menu').onclick = function() {
+        showOverlay('vocab-menu');
+    };
+    document.getElementById('next-level').onclick = function() {
+        showOverlay(null);
+        isPause = false;
+        update();
+    };
+    document.getElementById('view-leaderboard').onclick = function() {
+        renderLeaderboard('level_' + MyFish.value);
+    };
+}
+
+let CURRENT_CHAPTER = null;
+
+// Show the world map first
+document.getElementById("world-map-screen").style.display = "block";
+document.getElementById("wrapper").style.display = "none";
+
+function selectChapter(id) {
+    CURRENT_CHAPTER = GAME_STAGES.chapters.find(c => c.id === id);
+
+    document.getElementById("world-map-screen").style.display = "none";
+    document.getElementById("stage-select-screen").style.display = "block";
+
+    document.getElementById("chapter-name").innerText = CURRENT_CHAPTER.name;
+
+    const list = document.getElementById("stage-list");
+    list.innerHTML = "";
+
+    CURRENT_CHAPTER.stages.forEach(stage => {
+        const btn = document.createElement("div");
+        btn.classList.add("stage-button");
+
+        if (!stage.unlocked && !CURRENT_CHAPTER.unlockedByDefault) {
+            btn.classList.add("locked");
+            btn.innerText = `Stage ${stage.id} (Locked)`;
+        } else {
+            btn.innerText = `Stage ${stage.id} — Mode: ${stage.mode}`;
+            btn.onclick = () => startStage(stage.id);
+        }
+
+        list.appendChild(btn);
+    });
+}
+
+function startStage(stageId) {
+    loadStage(CURRENT_CHAPTER.id, stageId);
+
+    document.getElementById("stage-select-screen").style.display = "none";
+    document.getElementById("wrapper").style.display = "block";
+
+    // call original start game function:
+    if (typeof startGame === "function") {
+        startGame();
+    } else if (typeof startGameFlow === "function") {
+        startGameFlow();
+    }
+}
+
+function backToMap() {
+    document.getElementById("stage-select-screen").style.display = "none";
+    document.getElementById("world-map-screen").style.display = "block";
+}
+
+function unlockNextStage(chapterId, stageId) {
+    const chapter = GAME_STAGES.chapters.find(c => c.id === chapterId);
+    const stage = chapter.stages.find(s => s.id === stageId);
+    if (stage) {
+        stage.unlocked = true;
+    }
+}
+
+function returnToStageSelect() {
+    showOverlay(null);
+    document.getElementById("wrapper").style.display = "none";
+    document.getElementById("stage-select-screen").style.display = "block";
 }
 
