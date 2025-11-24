@@ -427,7 +427,9 @@ var MyMarines = {
         mr.img = new Image();
         mr.img.src = marines_source[rand];
 
-        if (rand == 0) {
+        mr.velocityY = 0;
+
+        if (rand == 1 || rand == 2) {
             mr.value = 1;
             mr.width = 50;
             mr.height = 50;
@@ -438,23 +440,23 @@ var MyMarines = {
         } else {
             mr.velocityY = 0;
 
-            if (rand == 1 || rand == 2) {
-                mr.value = 1;
-                mr.width = 70;
-                mr.height = 35;
-            }
+        if (rand == 3 || rand == 4) {
+            mr.value = 2;
+            mr.width = 100;
+            mr.height = 50;
+        }
 
-            if (rand == 3 || rand == 4) {
-                mr.value = 2;
-                mr.width = 100;
-                mr.height = 50;
-            }
+        if (rand == 5 || rand == 6) {
+            mr.value = 3;
+            mr.width = 100;
+            mr.height = 70;
+        }
 
-            if (rand == 5 || rand == 6) {
-                mr.value = 3;
-                mr.width = 100;
-                mr.height = 70;
-            }
+        if (rand == 7 || rand == 8) {
+            mr.value = 4;
+            mr.width = 140;
+            mr.height = 80;
+        }
 
             var speedRange = this.getSpeedRange(mr.value);
             var speed = this.getRandomSpeed(speedRange.min, speedRange.max);
