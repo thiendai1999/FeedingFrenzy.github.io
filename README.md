@@ -13,7 +13,6 @@ Feeding Frenzy là một mini game HTML5 Canvas mô phỏng cách săn mồi dư
 - Không thể ăn cá mập.
 - Ăn nhầm cá sẽ mất 1 mạng (có 3 mạng). Mất 3 mạng sẽ thua; mất mạng sẽ được miễn nhiễm 3 giây.
 - Mỗi lần lên cấp sẽ hồi lại 3 mạng. Có 3 mốc lên cấp chính trước khi đạt điểm thắng cuối cùng, thanh tiến trình hiển thị toàn bộ mốc điểm.
-- Mật độ cá trên màn hình giảm còn khoảng 4-6 con tùy cấp. Ở cấp 1 ưu tiên nhiều cá cấp 1 bơi chậm, cá cấp 2-3 xuất hiện thưa hơn nhưng bơi nhanh hơn; lên cấp thì thêm cá cấp cao nhưng tốc độ của chúng vẫn nhanh hơn cá cấp 1.
 
 ## Chạy dự án
 - Mở trực tiếp `index.html` trong trình duyệt hoặc phục vụ thư mục này bằng bất kỳ HTTP server tĩnh nào.

@@ -67,47 +67,6 @@
             <div id="leaderboard" class="hidden"></div>
         </div>
     </div>
-
-    <!-- WORLD MAP SCREEN -->
-    <div id="world-map-screen" style="display:none;">
-        <h1 class="map-title">Choose Your Chapter</h1>
-
-        <div class="map-grid">
-            <div class="chapter-card" onclick="selectChapter(1)">
-                <img src="images/map/angel_reef.png" />
-                <p>Angel Reef</p>
-            </div>
-
-            <div class="chapter-card locked" id="chapter-2" onclick="selectChapter(2)">
-                <img src="images/map/lions_pass.png" />
-                <p>Lion's Pass</p>
-            </div>
-
-            <div class="chapter-card locked" id="chapter-3" onclick="selectChapter(3)">
-                <img src="images/map/dory_isle.png" />
-                <p>Dory Isle</p>
-            </div>
-
-            <div class="chapter-card locked" id="chapter-4" onclick="selectChapter(4)">
-                <img src="images/map/shark_reef.png" />
-                <p>Shark Reef</p>
-            </div>
-
-            <div class="chapter-card locked" id="chapter-5" onclick="selectChapter(5)">
-                <img src="images/map/angler_cove.png" />
-                <p>Angler Cove</p>
-            </div>
-        </div>
-    </div>
-
-    <!-- STAGE SELECT SCREEN -->
-    <div id="stage-select-screen" style="display:none;">
-        <h1 class="stage-title">Chapter <span id="chapter-name"></span></h1>
-
-        <div class="stage-list" id="stage-list"></div>
-
-        <button onclick="backToMap()" class="back-btn">Back to Map</button>
-    </div>
     <div id='wrapper'>
         <div id='arena'>
             <canvas id="game-canvas" width="1100px" height="550px" style="left: '183px'; top: '19px';">

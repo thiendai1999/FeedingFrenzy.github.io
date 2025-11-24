@@ -14,37 +14,6 @@ trans_value = 5;
 trans_x_max = 0;
 trans_y_max = 0;
 
-window.CURRENT_STAGE = null;
-
-// Stage runtime
-let stageScore = 0;
-let stageTimer = 0;
-let stageTimeLimit = null;
-let stageTargetScore = 0;
-let stageQuizCount = 0;
-let stageMode = "normal";
-let stageComplete = false;
-let quizShown = 0;
-let lastTimestamp = null;
-
-function loadStage(chapterId, stageId) {
-    const chapter = GAME_STAGES.chapters.find(c => c.id === chapterId);
-    const stage = chapter.stages.find(s => s.id === stageId);
-    window.CURRENT_STAGE = stage;
-}
-
-function getSpawnRates() { return window.CURRENT_STAGE.spawn; }
-function getStageSpeed() { return window.CURRENT_STAGE.speed; }
-function getStageMode() { return window.CURRENT_STAGE.mode; }
-function getStageBackground() { return window.CURRENT_STAGE.background; }
-
-function randomRange(min, max) {
-    return Math.random() * (max - min) + min;
-}
-
-// TEMP: auto load stage 1-1 for now:
-loadStage(1, 1);
-
 var DEFAULT_VOCAB_SETS = {
     "Động vật": [
         { word: "cat", meaning: "con mèo" },
@@ -86,8 +55,8 @@ var global_mouse_y = 0;
 
 
 
-var marines_number = 4;
-var base_marines_number = 4;
+var marines_number = 6;
+var base_marines_number = 6;
 var isPause = true,
     isWin = false,
     isGameOver = false;
@@ -395,9 +364,45 @@ var MyMarines = {
         return Math.floor(Math.random() * (max - min + 1)) + min;
     },
 
-    add: function() {
-        const spawn = getSpawnRates();
-        const speedConfig = getStageSpeed();
+    getRandomSpeed: function(min, max) {
+        return Math.random() * (max - min) + min;
+    },
+
+    pickMarineType: function(playerLevel) {
+        var roll = Math.random();
+        if (playerLevel <= 1) {
+            if (roll < 0.7) return 1; // cá cấp 1 chiếm đa số
+            if (roll < 0.88) return 2;
+            if (roll < 0.98) return 3;
+            return 0; // sao biển
+        }
+        if (playerLevel === 2) {
+            if (roll < 0.5) return 1;
+            if (roll < 0.78) return 2;
+            if (roll < 0.93) return 3;
+            return 0;
+        }
+        // playerLevel >= 3
+        if (roll < 0.4) return 1;
+        if (roll < 0.7) return 2;
+        if (roll < 0.88) return 3;
+        return 0;
+    },
+
+    getSpeedRange: function(value) {
+        if (value === 1) {
+            return { min: 0.6, max: 1.8 };
+        }
+        if (value === 2) {
+            return { min: 1.4, max: 2.6 };
+        }
+        if (value === 3) {
+            return { min: 1.8, max: 3.2 };
+        }
+        return { min: 0.5, max: 1.2 };
+    },
+
+    add: function(playerLevel) {
         var mr = {
             value: 0, // 0 1 2 3 4
             top: 0,
@@ -411,23 +416,18 @@ var MyMarines = {
             velocityY: 0,
         }
 
-        let r = Math.random();
-        let type = "small";
-        if (r < spawn.small) type = "small";
-        else if (r < spawn.small + spawn.medium) type = "medium";
-        else if (r < spawn.small + spawn.medium + spawn.large) type = "large";
-        else type = "shark";
-
+        var level = playerLevel || MyFish.value;
+        var pickedValue = this.pickMarineType(level);
         var rand = 0;
 
-        if (type === 'small') {
+        if (pickedValue === 0) {
+            rand = 0;
+        } else if (pickedValue === 1) {
             rand = this.getRandomInt(1, 2);
-        } else if (type === 'medium') {
+        } else if (pickedValue === 2) {
             rand = this.getRandomInt(3, 4);
-        } else if (type === 'large') {
-            rand = this.getRandomInt(5, 6);
         } else {
-            rand = this.getRandomInt(7, 8);
+            rand = this.getRandomInt(5, 6);
         }
 
         mr.img = new Image();
@@ -435,13 +435,16 @@ var MyMarines = {
 
         mr.velocityY = 0;
 
-        mr.type = type;
-
         if (rand == 1 || rand == 2) {
             mr.value = 1;
-            mr.width = 70;
-            mr.height = 35;
-        }
+            mr.width = 50;
+            mr.height = 50;
+            mr.velocityX = 0;
+            mr.velocityY = this.getRandomSpeed(0.6, 1.4);
+            mr.top = 0;
+            mr.left = this.getRandomInt(0 + 100, MyCanvas.background_width - 100);
+        } else {
+            mr.velocityY = 0;
 
         if (rand == 3 || rand == 4) {
             mr.value = 2;
@@ -461,18 +464,20 @@ var MyMarines = {
             mr.height = 80;
         }
 
-        var swimSpeed = randomRange(speedConfig.min, speedConfig.max);
+            var speedRange = this.getSpeedRange(mr.value);
+            var speed = this.getRandomSpeed(speedRange.min, speedRange.max);
 
-        // right
-        if (rand % 2 == 0) {
-            mr.velocityX = swimSpeed;
-            mr.left = 0;
-            mr.top = this.getRandomInt(MyCanvas.canvas_max_top, MyCanvas.background_height - mr.height);
-        } else {
-            // left
-            mr.velocityX = -swimSpeed;
-            mr.left = MyCanvas.background_width;
-            mr.top = this.getRandomInt(MyCanvas.canvas_max_top, MyCanvas.background_height - mr.height);
+            // right
+            if (rand % 2 == 0) {
+                mr.velocityX = speed;
+                mr.left = 0;
+                mr.top = this.getRandomInt(MyCanvas.canvas_max_top, MyCanvas.background_height - mr.height);
+            } else {
+                // left
+                mr.velocityX = -speed;
+                mr.left = MyCanvas.background_width;
+                mr.top = this.getRandomInt(MyCanvas.canvas_max_top, MyCanvas.background_height - mr.height);
+            }
         }
 
         marines_.push(mr);
@@ -554,27 +559,19 @@ var MyCheck = {
 
             if (mr.left < fish_x && fish_x < mr.left + mr.width &&
                 mr.top < fish_y && fish_y < mr.top + mr.height) {
-                if (mr.value <= MyFish.value && !mr.dangerous) {
+                if (mr.value <= MyFish.value) {
                     if (mr.value == 1) {
                         cur_score += 2;
                         fishScore += 2;
-                        scoreGain = 2;
                     } else if (mr.value == 2) {
                         cur_score += 3;
                         fishScore += 3;
-                        scoreGain = 3;
                     } else if (mr.value == 3) {
                         cur_score += 5;
                         fishScore += 5;
-                        scoreGain = 5;
                     } else {
                         cur_score += 5;
                         fishScore += 5;
-                        scoreGain = 5;
-                    }
-                    stageScore += scoreGain;
-                    if (stageTargetScore > 0) {
-                        updateProgress(stageScore / stageTargetScore);
                     }
                     marines_.splice(i, 1);
                 } else {
@@ -596,33 +593,27 @@ var MyCheck = {
         }
 
         //
-        if (stageMode !== "hunting") {
-            if (cur_value != 1 && 0 <= cur_score && cur_score < score_to_level_2) {
-                cur_value = 1;
-                console.log('level 1');
-            }
-            if (cur_value != 2 && score_to_level_2 <= cur_score && cur_score < score_to_level_3) {
-                cur_value = 2;
-                MyHeart.heart = 3;
-                MyNoti.levelUp();
-                MyFish.width = 120;
-                MyFish.height = 60;
-                marines_number = base_marines_number + 1;
-                console.log('level 2');
-            }
-            if (cur_value != 3 && score_to_level_3 <= cur_score) {
-                cur_value = 3;
-                MyHeart.heart = 3;
-                MyNoti.levelUp();
-                MyFish.width = 150;
-                MyFish.height = 90;
-                marines_number = base_marines_number + 2;
-                console.log('level 3');
-            }
+        if (cur_value != 1 && 0 <= cur_score && cur_score < score_to_level_2) {
+            cur_value = 1;
+            console.log('level 1');
         }
-
-        if (!stageComplete && stageTargetScore > 0 && stageScore >= stageTargetScore) {
-            endStage(true);
+        if (cur_value != 2 && score_to_level_2 <= cur_score && cur_score < score_to_level_3) {
+            cur_value = 2;
+            MyHeart.heart = 3;
+            MyNoti.levelUp();
+            MyFish.width = 120;
+            MyFish.height = 60;
+            marines_number = base_marines_number + 1;
+            console.log('level 2');
+        }
+        if (cur_value != 3 && score_to_level_3 <= cur_score) {
+            cur_value = 3;
+            MyHeart.heart = 3;
+            MyNoti.levelUp();
+            MyFish.width = 150;
+            MyFish.height = 90;
+            marines_number = base_marines_number + 2;
+            console.log('level 3');
         }
 
         if (cur_score >= score_to_win) {
@@ -815,14 +806,6 @@ function update(timestamp) {
 
         0, 0, MyCanvas.canvas_width, MyCanvas.canvas_height);
 
-    if (stageTimeLimit !== null && !stageComplete) {
-        stageTimer += deltaTime;
-
-        if (stageTimer >= stageTimeLimit) {
-            endStage(false); // failed
-        }
-    }
-
     if (isWin) {
         showLevelSummary();
         return;
@@ -846,6 +829,155 @@ background.onload = function() {
     init();
     bindEducationUI();
     update();
+    startQuizCycle();
+}
+
+function bindEducationUI() {
+    loadUserData();
+    renderVocabOptions();
+    showOverlay('auth-screen');
+    document.getElementById('login-tab').onclick = function() { toggleTabs(false); };
+    document.getElementById('register-tab').onclick = function() { toggleTabs(true); };
+    document.getElementById('login-form').addEventListener('submit', function(e) {
+        e.preventDefault();
+        var username = document.getElementById('login-username').value.trim();
+        var password = document.getElementById('login-password').value;
+        var user = userData.users.find(function(u) { return u.username === username && u.password === password; });
+        if (user) {
+            activeUser = username;
+            document.getElementById('login-message').textContent = '';
+            showOverlay('vocab-menu');
+        } else {
+            document.getElementById('login-message').textContent = 'Tên đăng nhập hoặc mật khẩu chưa đúng';
+        }
+    });
+
+    document.getElementById('register-form').addEventListener('submit', function(e) {
+        e.preventDefault();
+        var username = document.getElementById('register-username').value.trim();
+        var password = document.getElementById('register-password').value;
+        var confirm = document.getElementById('register-password-confirm').value;
+        if (!username || !password) {
+            document.getElementById('register-message').textContent = 'Vui lòng nhập đủ thông tin';
+            return;
+        }
+        if (password !== confirm) {
+            document.getElementById('register-message').textContent = 'Mật khẩu không khớp';
+            return;
+        }
+        var existed = userData.users.some(function(u) { return u.username === username; });
+        if (existed) {
+            document.getElementById('register-message').textContent = 'Tên đăng nhập đã tồn tại';
+            return;
+        }
+        userData.users.push({ username: username, password: password });
+        persistData();
+        document.getElementById('register-message').textContent = 'Đã tạo tài khoản thành công';
+        document.getElementById('login-username').value = username;
+        toggleTabs(false);
+    });
+
+    document.getElementById('start-game').onclick = function() {
+        selectedSets = [];
+        document.querySelectorAll('#vocab-options input[type="checkbox"]').forEach(function(input) {
+            if (input.checked) {
+                selectedSets.push(input.value);
+            }
+        });
+        if (selectedSets.length === 0) {
+            selectedSets = Object.keys(DEFAULT_VOCAB_SETS);
+        }
+        showOverlay(null);
+        document.getElementById("world-map-screen").style.display = "block";
+        document.getElementById("stage-select-screen").style.display = "none";
+        document.getElementById("wrapper").style.display = "none";
+    };
+
+    document.getElementById('logout').onclick = function() {
+        activeUser = null;
+        showOverlay('auth-screen');
+    };
+    document.getElementById('logout-end').onclick = function() {
+        activeUser = null;
+        showOverlay('auth-screen');
+    };
+    document.getElementById('back-to-menu').onclick = function() {
+        showOverlay('vocab-menu');
+    };
+    document.getElementById('next-level').onclick = function() {
+        showOverlay(null);
+        isPause = false;
+        update();
+    };
+    document.getElementById('view-leaderboard').onclick = function() {
+        renderLeaderboard('level_' + MyFish.value);
+    };
+}
+
+let CURRENT_CHAPTER = null;
+
+// Show the world map first
+document.getElementById("world-map-screen").style.display = "block";
+document.getElementById("wrapper").style.display = "none";
+
+function selectChapter(id) {
+    CURRENT_CHAPTER = GAME_STAGES.chapters.find(c => c.id === id);
+
+    document.getElementById("world-map-screen").style.display = "none";
+    document.getElementById("stage-select-screen").style.display = "block";
+
+    document.getElementById("chapter-name").innerText = CURRENT_CHAPTER.name;
+
+    const list = document.getElementById("stage-list");
+    list.innerHTML = "";
+
+    CURRENT_CHAPTER.stages.forEach(stage => {
+        const btn = document.createElement("div");
+        btn.classList.add("stage-button");
+
+        if (!stage.unlocked && !CURRENT_CHAPTER.unlockedByDefault) {
+            btn.classList.add("locked");
+            btn.innerText = `Stage ${stage.id} (Locked)`;
+        } else {
+            btn.innerText = `Stage ${stage.id} — Mode: ${stage.mode}`;
+            btn.onclick = () => startStage(stage.id);
+        }
+
+        list.appendChild(btn);
+    });
+}
+
+function startStage(stageId) {
+    loadStage(CURRENT_CHAPTER.id, stageId);
+
+    document.getElementById("stage-select-screen").style.display = "none";
+    document.getElementById("wrapper").style.display = "block";
+
+    // call original start game function:
+    if (typeof startGame === "function") {
+        startGame();
+    } else if (typeof startGameFlow === "function") {
+        startGameFlow();
+    }
+}
+
+function backToMap() {
+    document.getElementById("stage-select-screen").style.display = "none";
+    document.getElementById("world-map-screen").style.display = "block";
+}
+
+function unlockNextStage(chapterId, stageId) {
+    const chapter = GAME_STAGES.chapters.find(c => c.id === chapterId);
+    const stage = chapter.stages.find(s => s.id === stageId);
+    if (stage) {
+        stage.unlocked = true;
+    }
+}
+
+function returnToStageSelect() {
+    showOverlay(null);
+    document.getElementById("wrapper").style.display = "none";
+    document.getElementById("stage-select-screen").style.display = "block";
 }
 
 // ---------------------------
@@ -1003,11 +1135,7 @@ function handleAnswer(isCorrect, word) {
         document.getElementById('question-feedback').textContent = 'Sai rồi! -5 điểm';
         scheduleNextQuestion(5000);
     }
-    if (stageTargetScore > 0) {
-        MyProgressBar.value = Math.min(stageScore, stageTargetScore);
-    } else {
-        MyProgressBar.value = MyScore.score;
-    }
+    MyProgressBar.value = MyScore.score;
     persistData();
 }
 
@@ -1016,25 +1144,15 @@ function scheduleNextQuestion(delay) {
     if (quizTimer) {
         clearTimeout(quizTimer);
     }
-    if (stageComplete) {
-        return;
-    }
-    if (quizShown >= stageQuizCount) {
-        return;
-    }
     quizTimer = setTimeout(function() {
         renderQuestion();
-        quizShown++;
     }, delay);
 }
 
 function startQuizCycle() {
     askedWords = [];
     quizIndex = 0;
-    if (stageQuizCount > 0) {
-        renderQuestion();
-        quizShown = 1;
-    }
+    renderQuestion();
 }
 
 function saveHighScore(level, totalScore) {
@@ -1076,103 +1194,6 @@ function showLevelSummary() {
     var levelKey = 'level_' + MyFish.value;
     saveHighScore(levelKey, total);
     showOverlay('level-summary');
-}
-
-function showStageCompleteScreen(score) {
-    var header = document.querySelector('#level-summary h2');
-    if (header) {
-        header.textContent = 'Hoàn thành màn';
-    }
-    document.getElementById('fish-score').textContent = 'Điểm ăn cá: ' + score;
-    document.getElementById('bonus-score').textContent = 'Mục tiêu: ' + stageTargetScore;
-    document.getElementById('total-score').textContent = 'Tổng điểm: ' + score;
-    var nextBtn = document.getElementById('next-level');
-    if (nextBtn) {
-        nextBtn.textContent = 'Chọn màn tiếp';
-        nextBtn.onclick = returnToStageSelect;
-    }
-    var backBtn = document.getElementById('back-to-menu');
-    if (backBtn) {
-        backBtn.onclick = returnToStageSelect;
-    }
-    showOverlay('level-summary');
-}
-
-function showStageFailedScreen(score) {
-    var header = document.querySelector('#level-summary h2');
-    if (header) {
-        header.textContent = 'Thua màn';
-    }
-    document.getElementById('fish-score').textContent = 'Điểm ăn cá: ' + score;
-    document.getElementById('bonus-score').textContent = 'Hãy thử lại để đạt mục tiêu ' + stageTargetScore;
-    document.getElementById('total-score').textContent = 'Tổng điểm: ' + score;
-    var nextBtn = document.getElementById('next-level');
-    if (nextBtn) {
-        nextBtn.textContent = 'Quay lại chọn màn';
-        nextBtn.onclick = returnToStageSelect;
-    }
-    var backBtn = document.getElementById('back-to-menu');
-    if (backBtn) {
-        backBtn.onclick = returnToStageSelect;
-    }
-    showOverlay('level-summary');
-}
-
-function endStage(success) {
-    stageComplete = true;
-    isPause = true;
-    if (quizTimer) {
-        clearTimeout(quizTimer);
-        quizTimer = null;
-    }
-    showOverlay(null);
-
-    if (success) {
-        showStageCompleteScreen(stageScore);
-
-        if (CURRENT_CHAPTER && window.CURRENT_STAGE) {
-            unlockNextStage(CURRENT_CHAPTER.id, window.CURRENT_STAGE.id + 1);
-        }
-    } else {
-        showStageFailedScreen(stageScore);
-    }
-}
-
-function startGame() {
-    const cfg = window.CURRENT_STAGE;
-    if (!cfg) return;
-
-    // Load current stage settings
-    stageScore = 0;
-    stageTimer = 0;
-    stageComplete = false;
-
-    stageMode = cfg.mode;
-    stageTargetScore = cfg.targetScore || 0;
-    stageTimeLimit = cfg.timeLimit || null;
-    stageQuizCount = cfg.quizCount || 0;
-    quizShown = 0;
-
-    // Set background if provided:
-    if (cfg.background) {
-        document.getElementById("game-canvas").style.backgroundImage =
-            `url('${cfg.background}')`;
-    }
-
-    document.getElementById("world-map-screen").style.display = "none";
-    document.getElementById("stage-select-screen").style.display = "none";
-    document.getElementById("wrapper").style.display = "block";
-
-    MyProgressBar.max_value = stageTargetScore || score_to_win;
-    MyProgressBar.line_offsets = level_thresholds.map(function(threshold) {
-        return MyProgressBar.offsetX + threshold / MyProgressBar.max_value * MyProgressBar.width;
-    });
-    MyProgressBar.value = 0;
-
-    isWin = false;
-    isGameOver = false;
-    lastTimestamp = null;
-    startGameFlow();
 }
 
 function startGameFlow() {
@@ -1242,9 +1263,7 @@ function bindEducationUI() {
             selectedSets = Object.keys(DEFAULT_VOCAB_SETS);
         }
         showOverlay(null);
-        document.getElementById("world-map-screen").style.display = "block";
-        document.getElementById("stage-select-screen").style.display = "none";
-        document.getElementById("wrapper").style.display = "none";
+        startGameFlow();
     };
 
     document.getElementById('logout').onclick = function() {
@@ -1266,71 +1285,5 @@ function bindEducationUI() {
     document.getElementById('view-leaderboard').onclick = function() {
         renderLeaderboard('level_' + MyFish.value);
     };
-}
-
-let CURRENT_CHAPTER = null;
-
-// Show the world map first
-document.getElementById("world-map-screen").style.display = "block";
-document.getElementById("wrapper").style.display = "none";
-
-function selectChapter(id) {
-    CURRENT_CHAPTER = GAME_STAGES.chapters.find(c => c.id === id);
-
-    document.getElementById("world-map-screen").style.display = "none";
-    document.getElementById("stage-select-screen").style.display = "block";
-
-    document.getElementById("chapter-name").innerText = CURRENT_CHAPTER.name;
-
-    const list = document.getElementById("stage-list");
-    list.innerHTML = "";
-
-    CURRENT_CHAPTER.stages.forEach(stage => {
-        const btn = document.createElement("div");
-        btn.classList.add("stage-button");
-
-        if (!stage.unlocked && !CURRENT_CHAPTER.unlockedByDefault) {
-            btn.classList.add("locked");
-            btn.innerText = `Stage ${stage.id} (Locked)`;
-        } else {
-            btn.innerText = `Stage ${stage.id} — Mode: ${stage.mode}`;
-            btn.onclick = () => startStage(stage.id);
-        }
-
-        list.appendChild(btn);
-    });
-}
-
-function startStage(stageId) {
-    loadStage(CURRENT_CHAPTER.id, stageId);
-
-    document.getElementById("stage-select-screen").style.display = "none";
-    document.getElementById("wrapper").style.display = "block";
-
-    // call original start game function:
-    if (typeof startGame === "function") {
-        startGame();
-    } else if (typeof startGameFlow === "function") {
-        startGameFlow();
-    }
-}
-
-function backToMap() {
-    document.getElementById("stage-select-screen").style.display = "none";
-    document.getElementById("world-map-screen").style.display = "block";
-}
-
-function unlockNextStage(chapterId, stageId) {
-    const chapter = GAME_STAGES.chapters.find(c => c.id === chapterId);
-    const stage = chapter.stages.find(s => s.id === stageId);
-    if (stage) {
-        stage.unlocked = true;
-    }
-}
-
-function returnToStageSelect() {
-    showOverlay(null);
-    document.getElementById("wrapper").style.display = "none";
-    document.getElementById("stage-select-screen").style.display = "block";
 }
 
