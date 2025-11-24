@@ -272,6 +272,12 @@ var MyProgressBar = {
     }
 }
 
+function updateProgress(ratio) {
+    MyProgressBar.max_value = stageTargetScore || MyProgressBar.max_value;
+    var progressValue = ratio * MyProgressBar.max_value;
+    MyProgressBar.value = Math.min(progressValue, MyProgressBar.max_value);
+}
+
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // 
 var MyFish = {
@@ -479,6 +485,14 @@ var MyMarines = {
 
     update: function() {
         for (var i = 0; i < marines_.length; i++) {
+            if (stageMode === "hunting") {
+                if (marines_[i].type !== "small") marines_[i].dangerous = true;
+            }
+
+            if (stageMode === "super" && !marines_[i].superBoosted) {
+                marines_[i].velocityX *= 1.3;
+                marines_[i].superBoosted = true;
+            }
             marines_[i].left += marines_[i].velocityX;
             marines_[i].top += marines_[i].velocityY;
         }
@@ -524,6 +538,7 @@ var MyCheck = {
         var cur_score = MyScore.score;
         var cur_heart = MyHeart.heart;
         var cur_value = MyFish.value;
+        var scoreGain = 0;
 
         // immortal :))
         if (cur_value == 100) {
@@ -608,7 +623,11 @@ var MyCheck = {
         // UI
         MyFish.value = cur_value;
         MyScore.score = cur_score;
-        MyProgressBar.value = cur_score;
+        if (stageTargetScore > 0) {
+            MyProgressBar.value = Math.min(stageScore, stageTargetScore);
+        } else {
+            MyProgressBar.value = cur_score;
+        }
     },
 }
 
@@ -751,7 +770,17 @@ function beforeupdate() {
     trans_y = (trans_y > trans_y_max) ? trans_y_max : trans_y;
 }
 
-function update() {
+function update(timestamp) {
+
+    var deltaTime = 0;
+    if (typeof timestamp === "number") {
+        if (lastTimestamp !== null) {
+            deltaTime = (timestamp - lastTimestamp) / 1000;
+        }
+        lastTimestamp = timestamp;
+    } else {
+        lastTimestamp = performance.now();
+    }
 
     // draw background
     // var background = new Image();
@@ -800,6 +829,155 @@ background.onload = function() {
     init();
     bindEducationUI();
     update();
+    startQuizCycle();
+}
+
+function bindEducationUI() {
+    loadUserData();
+    renderVocabOptions();
+    showOverlay('auth-screen');
+    document.getElementById('login-tab').onclick = function() { toggleTabs(false); };
+    document.getElementById('register-tab').onclick = function() { toggleTabs(true); };
+    document.getElementById('login-form').addEventListener('submit', function(e) {
+        e.preventDefault();
+        var username = document.getElementById('login-username').value.trim();
+        var password = document.getElementById('login-password').value;
+        var user = userData.users.find(function(u) { return u.username === username && u.password === password; });
+        if (user) {
+            activeUser = username;
+            document.getElementById('login-message').textContent = '';
+            showOverlay('vocab-menu');
+        } else {
+            document.getElementById('login-message').textContent = 'Tên đăng nhập hoặc mật khẩu chưa đúng';
+        }
+    });
+
+    document.getElementById('register-form').addEventListener('submit', function(e) {
+        e.preventDefault();
+        var username = document.getElementById('register-username').value.trim();
+        var password = document.getElementById('register-password').value;
+        var confirm = document.getElementById('register-password-confirm').value;
+        if (!username || !password) {
+            document.getElementById('register-message').textContent = 'Vui lòng nhập đủ thông tin';
+            return;
+        }
+        if (password !== confirm) {
+            document.getElementById('register-message').textContent = 'Mật khẩu không khớp';
+            return;
+        }
+        var existed = userData.users.some(function(u) { return u.username === username; });
+        if (existed) {
+            document.getElementById('register-message').textContent = 'Tên đăng nhập đã tồn tại';
+            return;
+        }
+        userData.users.push({ username: username, password: password });
+        persistData();
+        document.getElementById('register-message').textContent = 'Đã tạo tài khoản thành công';
+        document.getElementById('login-username').value = username;
+        toggleTabs(false);
+    });
+
+    document.getElementById('start-game').onclick = function() {
+        selectedSets = [];
+        document.querySelectorAll('#vocab-options input[type="checkbox"]').forEach(function(input) {
+            if (input.checked) {
+                selectedSets.push(input.value);
+            }
+        });
+        if (selectedSets.length === 0) {
+            selectedSets = Object.keys(DEFAULT_VOCAB_SETS);
+        }
+        showOverlay(null);
+        document.getElementById("world-map-screen").style.display = "block";
+        document.getElementById("stage-select-screen").style.display = "none";
+        document.getElementById("wrapper").style.display = "none";
+    };
+
+    document.getElementById('logout').onclick = function() {
+        activeUser = null;
+        showOverlay('auth-screen');
+    };
+    document.getElementById('logout-end').onclick = function() {
+        activeUser = null;
+        showOverlay('auth-screen');
+    };
+    document.getElementById('back-to-menu').onclick = function() {
+        showOverlay('vocab-menu');
+    };
+    document.getElementById('next-level').onclick = function() {
+        showOverlay(null);
+        isPause = false;
+        update();
+    };
+    document.getElementById('view-leaderboard').onclick = function() {
+        renderLeaderboard('level_' + MyFish.value);
+    };
+}
+
+let CURRENT_CHAPTER = null;
+
+// Show the world map first
+document.getElementById("world-map-screen").style.display = "block";
+document.getElementById("wrapper").style.display = "none";
+
+function selectChapter(id) {
+    CURRENT_CHAPTER = GAME_STAGES.chapters.find(c => c.id === id);
+
+    document.getElementById("world-map-screen").style.display = "none";
+    document.getElementById("stage-select-screen").style.display = "block";
+
+    document.getElementById("chapter-name").innerText = CURRENT_CHAPTER.name;
+
+    const list = document.getElementById("stage-list");
+    list.innerHTML = "";
+
+    CURRENT_CHAPTER.stages.forEach(stage => {
+        const btn = document.createElement("div");
+        btn.classList.add("stage-button");
+
+        if (!stage.unlocked && !CURRENT_CHAPTER.unlockedByDefault) {
+            btn.classList.add("locked");
+            btn.innerText = `Stage ${stage.id} (Locked)`;
+        } else {
+            btn.innerText = `Stage ${stage.id} — Mode: ${stage.mode}`;
+            btn.onclick = () => startStage(stage.id);
+        }
+
+        list.appendChild(btn);
+    });
+}
+
+function startStage(stageId) {
+    loadStage(CURRENT_CHAPTER.id, stageId);
+
+    document.getElementById("stage-select-screen").style.display = "none";
+    document.getElementById("wrapper").style.display = "block";
+
+    // call original start game function:
+    if (typeof startGame === "function") {
+        startGame();
+    } else if (typeof startGameFlow === "function") {
+        startGameFlow();
+    }
+}
+
+function backToMap() {
+    document.getElementById("stage-select-screen").style.display = "none";
+    document.getElementById("world-map-screen").style.display = "block";
+}
+
+function unlockNextStage(chapterId, stageId) {
+    const chapter = GAME_STAGES.chapters.find(c => c.id === chapterId);
+    const stage = chapter.stages.find(s => s.id === stageId);
+    if (stage) {
+        stage.unlocked = true;
+    }
+}
+
+function returnToStageSelect() {
+    showOverlay(null);
+    document.getElementById("wrapper").style.display = "none";
+    document.getElementById("stage-select-screen").style.display = "block";
 }
 
 // ---------------------------
