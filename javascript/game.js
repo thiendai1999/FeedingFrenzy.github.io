@@ -14,26 +14,6 @@ trans_value = 5;
 trans_x_max = 0;
 trans_y_max = 0;
 
-window.CURRENT_STAGE = null;
-
-function loadStage(chapterId, stageId) {
-    const chapter = GAME_STAGES.chapters.find(c => c.id === chapterId);
-    const stage = chapter.stages.find(s => s.id === stageId);
-    window.CURRENT_STAGE = stage;
-}
-
-function getSpawnRates() { return window.CURRENT_STAGE.spawn; }
-function getStageSpeed() { return window.CURRENT_STAGE.speed; }
-function getStageMode() { return window.CURRENT_STAGE.mode; }
-function getStageBackground() { return window.CURRENT_STAGE.background; }
-
-function randomRange(min, max) {
-    return Math.random() * (max - min) + min;
-}
-
-// TEMP: auto load stage 1-1 for now:
-loadStage(1, 1);
-
 var DEFAULT_VOCAB_SETS = {
     "Động vật": [
         { word: "cat", meaning: "con mèo" },
@@ -75,8 +55,8 @@ var global_mouse_y = 0;
 
 
 
-var marines_number = 4;
-var base_marines_number = 4;
+var marines_number = 6;
+var base_marines_number = 6;
 var isPause = true,
     isWin = false,
     isGameOver = false;
@@ -378,17 +358,45 @@ var MyMarines = {
         return Math.floor(Math.random() * (max - min + 1)) + min;
     },
 
-    pickMarineType: function() {
-        const spawn = getSpawnRates();
-        const roll = Math.random();
-        if (roll < spawn.small) return 'small';
-        if (roll < spawn.small + spawn.medium) return 'medium';
-        if (roll < spawn.small + spawn.medium + spawn.large) return 'large';
-        return 'shark';
+    getRandomSpeed: function(min, max) {
+        return Math.random() * (max - min) + min;
     },
 
-    add: function() {
-        const speed = getStageSpeed();
+    pickMarineType: function(playerLevel) {
+        var roll = Math.random();
+        if (playerLevel <= 1) {
+            if (roll < 0.7) return 1; // cá cấp 1 chiếm đa số
+            if (roll < 0.88) return 2;
+            if (roll < 0.98) return 3;
+            return 0; // sao biển
+        }
+        if (playerLevel === 2) {
+            if (roll < 0.5) return 1;
+            if (roll < 0.78) return 2;
+            if (roll < 0.93) return 3;
+            return 0;
+        }
+        // playerLevel >= 3
+        if (roll < 0.4) return 1;
+        if (roll < 0.7) return 2;
+        if (roll < 0.88) return 3;
+        return 0;
+    },
+
+    getSpeedRange: function(value) {
+        if (value === 1) {
+            return { min: 0.6, max: 1.8 };
+        }
+        if (value === 2) {
+            return { min: 1.4, max: 2.6 };
+        }
+        if (value === 3) {
+            return { min: 1.8, max: 3.2 };
+        }
+        return { min: 0.5, max: 1.2 };
+    },
+
+    add: function(playerLevel) {
         var mr = {
             value: 0, // 0 1 2 3 4
             top: 0,
@@ -402,17 +410,18 @@ var MyMarines = {
             velocityY: 0,
         }
 
-        var pickedValue = this.pickMarineType();
+        var level = playerLevel || MyFish.value;
+        var pickedValue = this.pickMarineType(level);
         var rand = 0;
 
-        if (pickedValue === 'small') {
+        if (pickedValue === 0) {
+            rand = 0;
+        } else if (pickedValue === 1) {
             rand = this.getRandomInt(1, 2);
-        } else if (pickedValue === 'medium') {
+        } else if (pickedValue === 2) {
             rand = this.getRandomInt(3, 4);
-        } else if (pickedValue === 'large') {
-            rand = this.getRandomInt(5, 6);
         } else {
-            rand = this.getRandomInt(7, 8);
+            rand = this.getRandomInt(5, 6);
         }
 
         mr.img = new Image();
@@ -422,9 +431,14 @@ var MyMarines = {
 
         if (rand == 1 || rand == 2) {
             mr.value = 1;
-            mr.width = 70;
-            mr.height = 35;
-        }
+            mr.width = 50;
+            mr.height = 50;
+            mr.velocityX = 0;
+            mr.velocityY = this.getRandomSpeed(0.6, 1.4);
+            mr.top = 0;
+            mr.left = this.getRandomInt(0 + 100, MyCanvas.background_width - 100);
+        } else {
+            mr.velocityY = 0;
 
         if (rand == 3 || rand == 4) {
             mr.value = 2;
@@ -444,18 +458,20 @@ var MyMarines = {
             mr.height = 80;
         }
 
-        var swimSpeed = randomRange(speed.min, speed.max);
+            var speedRange = this.getSpeedRange(mr.value);
+            var speed = this.getRandomSpeed(speedRange.min, speedRange.max);
 
-        // right
-        if (rand % 2 == 0) {
-            mr.velocityX = swimSpeed;
-            mr.left = 0;
-            mr.top = this.getRandomInt(MyCanvas.canvas_max_top, MyCanvas.background_height - mr.height);
-        } else {
-            // left
-            mr.velocityX = -swimSpeed;
-            mr.left = MyCanvas.background_width;
-            mr.top = this.getRandomInt(MyCanvas.canvas_max_top, MyCanvas.background_height - mr.height);
+            // right
+            if (rand % 2 == 0) {
+                mr.velocityX = speed;
+                mr.left = 0;
+                mr.top = this.getRandomInt(MyCanvas.canvas_max_top, MyCanvas.background_height - mr.height);
+            } else {
+                // left
+                mr.velocityX = -speed;
+                mr.left = MyCanvas.background_width;
+                mr.top = this.getRandomInt(MyCanvas.canvas_max_top, MyCanvas.background_height - mr.height);
+            }
         }
 
         marines_.push(mr);
